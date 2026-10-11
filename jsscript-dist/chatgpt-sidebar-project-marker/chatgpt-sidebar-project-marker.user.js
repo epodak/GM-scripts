@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.062528
-// @description  按项目 ID 稳定分配颜色，仅在项目标题文字后显示浅色背景；悬浮项目详情卡片使用同一色系，不绘制竖条。
+// @version      2026.10.11.222918
+// @description  为最多 500 个项目按 ID 稳定生成高明度 OKLCH 颜色；保留标题浅色背景与同色悬浮卡片，不绘制竖条。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -77,19 +77,29 @@
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
 
-  // Curated distinguishable hues. Same project ID => same color across reloads.
-  // Colors are identifiers, not unique keys: collisions are inevitable at large N.
-  const PALETTE = [
-    "#dc2626", "#ea580c", "#b45309", "#65a30d",
-    "#16a34a", "#0d9488", "#0891b2", "#2563eb",
-    "#4f46e5", "#7c3aed", "#c026d3", "#db2777"
-  ];
+  // Perceptually more uniform than HSL and much larger than a 12-color list.
+  // Stable ID hashing -> continuous OKLCH hue, chroma and lightness.
+  // Bounded lightness excludes black/nearly-black; hues cover the full circle.
+  // 500 colors can be numerically different without being reliably recognized
+  // as 500 distinct categories: the project name remains the true identifier.
+  function mix32(value) {
+    value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+    value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+    return (value ^ (value >>> 16)) >>> 0;
+  }
+
   function projectColor(id) {
     let hash = 2166136261;
     for (let i = 0; i < id.length; i++) {
       hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
     }
-    return PALETTE[(hash >>> 0) % PALETTE.length];
+    const hue = (mix32(hash ^ 0x9e3779b9) / 0x100000000) * 360;
+    const lightness = 0.62 +
+      (mix32(hash ^ 0x85ebca6b) / 0x100000000) * 0.12;
+    const chroma = 0.13 +
+      (mix32(hash ^ 0xc2b2ae35) / 0x100000000) * 0.075;
+    return "oklch(" + (lightness * 100).toFixed(2) + "% " +
+      chroma.toFixed(4) + " " + hue.toFixed(2) + ")";
   }
 
   // Measure the visible title glyphs to position the background only.
