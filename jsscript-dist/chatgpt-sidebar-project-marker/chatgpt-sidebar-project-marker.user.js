@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.061027
-// @description  只在 ChatGPT 侧边栏项目对话标题前显示紫色小竖条；悬停显示项目名称及详情，不改变行背景。
+// @version      2026.10.11.062149
+// @description  按项目 ID 稳定分配颜色，项目标题前竖条、标题局部浅色背景及悬浮卡片统一色系；保持原生侧栏布局。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -25,26 +25,45 @@
   const CSS_TARGET = ':where(' + SCOPE + ') a:is([href^="/g/g-p-"],' +
     '[href^="https://chatgpt.com/g/g-p-"])[href*="/c/"]';
   const css = [
-    // A marker must use layout space, not an inset overlay on the first glyph.
-    // One consistent color communicates "project"; no arbitrary color collisions.
-    ':root{--jsp-rail:#7c3aed;--jsp-border:rgba(124,58,237,.19);',
-    '--jsp-surface:#fff;--jsp-text:#20242a;--jsp-muted:#68717d}',
-    'html.dark,html[data-theme="dark"]{--jsp-rail:#c084fc;',
-    '--jsp-border:rgba(192,132,252,.27);--jsp-surface:#25262a;',
+    // Only decorate the actual text run: no full-row backgrounds or layout shifts.
+    ':root{--jsp-surface:#fff;--jsp-text:#20242a;--jsp-muted:#68717d}',
+    // Define dependent variables on each entry/card, not on :root:
+    // inherited computed var() values would otherwise all use the fallback blue.
+    '.jsp-project-tag,#jsp-project-card{',
+    '--jsp-main:var(--jsp-accent,#2563eb);',
+    '--jsp-tint:color-mix(in srgb,var(--jsp-accent,#2563eb) 13%,transparent)}',
+    'html.dark,html[data-theme="dark"]{--jsp-surface:#25262a;',
     '--jsp-text:#f5f5f5;--jsp-muted:#a8afb9}',
-    CSS_TARGET+'::before{content:"";display:inline-block;',
-    'inline-size:3px;block-size:15px;min-inline-size:3px;',
-    'margin-inline-end:8px;flex:0 0 3px;vertical-align:-2px;',
-    'border-radius:3px;background-color:var(--jsp-rail);',
-    'pointer-events:none;}',
+    'html.dark .jsp-project-tag,html.dark #jsp-project-card,',
+    'html[data-theme="dark"] .jsp-project-tag,',
+    'html[data-theme="dark"] #jsp-project-card{',
+    '--jsp-main:color-mix(in srgb,var(--jsp-accent,#2563eb) 68%,white);',
+    '--jsp-tint:color-mix(in srgb,var(--jsp-accent,#2563eb) 24%,transparent)}',
+    CSS_TARGET+'.jsp-project-tag{position:relative!important;isolation:isolate}',
+    CSS_TARGET+'.jsp-project-tag::before{content:"";position:absolute;',
+    'inset-inline-start:var(--jsp-bg-x);top:var(--jsp-bg-y);',
+    'width:var(--jsp-bg-w);height:var(--jsp-bg-h);',
+    'background:var(--jsp-tint);border-radius:5px;',
+    'pointer-events:none;z-index:-1}',
+    CSS_TARGET+'.jsp-project-tag::after{content:"";position:absolute;',
+    'inset-inline-start:var(--jsp-bar-x);top:var(--jsp-bar-y);',
+    'width:3px;height:15px;transform:translateY(-50%);',
+    'background:var(--jsp-main);border-radius:3px;',
+    'pointer-events:none;z-index:1}',
     '#jsp-project-card{position:fixed;z-index:2147483600;',
     'box-sizing:border-box;width:min(330px,calc(100vw - 16px));',
-    'padding:14px 15px;background:var(--jsp-surface);color:var(--jsp-text);',
-    'border:1px solid var(--jsp-border);border-radius:12px;',
-    'box-shadow:0 12px 36px rgba(0,0,0,.16);',
+    'padding:14px 15px;color:var(--jsp-text);',
+    'background:linear-gradient(165deg,',
+    'color-mix(in srgb,var(--jsp-main) 11%,var(--jsp-surface)),',
+    'var(--jsp-surface) 76%);',
+    'border:1px solid color-mix(in srgb,var(--jsp-main) 38%,transparent);',
+    'border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.16);',
     'font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
     '#jsp-project-card[hidden]{display:none!important}',
-    '#jsp-project-card .jsp-label{font-size:11px;color:var(--jsp-rail);font-weight:700}',
+    '#jsp-project-card .jsp-label{font-size:11px;color:var(--jsp-main);font-weight:700}',
+    '#jsp-project-card .jsp-label::before{content:"";display:inline-block;',
+    'width:3px;height:11px;margin-right:6px;vertical-align:-1px;',
+    'background:var(--jsp-main);border-radius:2px}',
     '#jsp-project-card .jsp-title{font-size:15px;font-weight:650;',
     'line-height:1.4;overflow-wrap:anywhere;margin-top:4px}',
     '#jsp-project-card .jsp-desc{margin:8px 0 0;color:var(--jsp-muted);',
@@ -52,18 +71,148 @@
     '#jsp-project-card .jsp-meta{margin:8px 0;color:var(--jsp-muted);font-size:11px}',
     '#jsp-project-card .jsp-foot{display:flex;align-items:center;',
     'justify-content:space-between;gap:8px;margin-top:9px;',
-    'border-top:1px solid var(--jsp-border);padding-top:10px;font-size:11px}',
+    'border-top:1px solid color-mix(in srgb,var(--jsp-main) 27%,transparent);',
+    'padding-top:10px;font-size:11px}',
     '#jsp-project-card .jsp-id{overflow:hidden;white-space:nowrap;',
     'text-overflow:ellipsis;color:var(--jsp-muted)}',
-    '#jsp-project-card a{color:var(--jsp-rail);text-decoration:none;',
+    '#jsp-project-card a{color:var(--jsp-main);text-decoration:none;',
     'font-weight:650;white-space:nowrap}',
     '#jsp-project-card a:hover{text-decoration:underline}',
-    '#jsp-project-card a:focus-visible{outline:2px solid var(--jsp-rail)}'
+    '#jsp-project-card a:focus-visible{outline:2px solid var(--jsp-main)}'
   ].join("\n");
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
+
+  // Curated distinguishable hues. Same project ID => same color across reloads.
+  // Colors are identifiers, not unique keys: collisions are inevitable at large N.
+  const PALETTE = [
+    "#dc2626", "#ea580c", "#b45309", "#65a30d",
+    "#16a34a", "#0d9488", "#0891b2", "#2563eb",
+    "#4f46e5", "#7c3aed", "#c026d3", "#db2777"
+  ];
+  function projectColor(id) {
+    let hash = 2166136261;
+    for (let i = 0; i < id.length; i++) {
+      hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
+    }
+    return PALETTE[(hash >>> 0) % PALETTE.length];
+  }
+
+  // Measure actual text glyphs; pseudo-elements are absolutely positioned.
+  // This prevents the flex/wrapping offset seen with inline ::before markers.
+  function titleTextRectangle(link) {
+    const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+    let text;
+    while ((text = walker.nextNode())) {
+      if (!text.nodeValue?.trim()) continue;
+      if (text.parentElement?.closest('button,[role="button"],[aria-hidden="true"]')) {
+        continue;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const rect = range.getBoundingClientRect();
+      if (rect.width > 2 && rect.height > 2) {
+        let clipRight = link.getBoundingClientRect().right - 16;
+        for (let parent = text.parentElement; parent && parent !== link;
+          parent = parent.parentElement) {
+          const overflow = getComputedStyle(parent).overflowX;
+          if (overflow === "hidden" || overflow === "clip") {
+            clipRight = Math.min(clipRight, parent.getBoundingClientRect().right);
+            break;
+          }
+        }
+        return { rect, clipRight };
+      }
+    }
+    return null;
+  }
+
+  function labelGeometry(linkRect, textRect, clipRight) {
+    const x = textRect.left - linkRect.left;
+    const y = textRect.top - linkRect.top;
+    const visibleWidth = Math.max(0,
+      Math.min(textRect.width, clipRight - textRect.left));
+    return {
+      markerX: Math.max(2, x - 13),
+      markerY: y + textRect.height / 2,
+      backgroundX: Math.max(0, x - 5),
+      backgroundY: y - 3,
+      backgroundWidth: visibleWidth + 10,
+      backgroundHeight: textRect.height + 6
+    };
+  }
+
+  function decorateLink(link) {
+    const id = projectIdFromHref(link.getAttribute("href"));
+    if (!id) return;
+    const found = titleTextRectangle(link);
+    if (!found) {
+      // If DOM layout changes, do not draw a marker in the wrong place.
+      link.classList.remove("jsp-project-tag");
+      return;
+    }
+    const geom = labelGeometry(link.getBoundingClientRect(),
+      found.rect, found.clipRight);
+    if (geom.backgroundWidth < 12) {
+      link.classList.remove("jsp-project-tag");
+      return;
+    }
+    const style = link.style;
+    style.setProperty("--jsp-accent", projectColor(id));
+    style.setProperty("--jsp-bar-x", geom.markerX.toFixed(1) + "px");
+    style.setProperty("--jsp-bar-y", geom.markerY.toFixed(1) + "px");
+    style.setProperty("--jsp-bg-x", geom.backgroundX.toFixed(1) + "px");
+    style.setProperty("--jsp-bg-y", geom.backgroundY.toFixed(1) + "px");
+    style.setProperty("--jsp-bg-w", geom.backgroundWidth.toFixed(1) + "px");
+    style.setProperty("--jsp-bg-h", geom.backgroundHeight.toFixed(1) + "px");
+    link.classList.add("jsp-project-tag");
+  }
+
+  let decorationQueued = false;
+  function decorateAll() {
+    for (const link of document.querySelectorAll(CSS_TARGET)) {
+      decorateLink(link);
+    }
+  }
+  function scheduleDecorate() {
+    if (decorationQueued) return;
+    decorationQueued = true;
+    requestAnimationFrame(() => {
+      decorationQueued = false;
+      decorateAll();
+    });
+  }
+
+  // React's sidebar is virtual/dynamic. Observe only structural/href changes;
+  // styling class/variables does not trigger this observer.
+  function relevantChange(mutation) {
+    const target = mutation.target;
+    if (mutation.type === "attributes" && mutation.attributeName === "class") {
+      // React may replace classes on a reused link; repair only if ours vanished.
+      return target instanceof Element && target.matches(LINK_SELECTOR) &&
+        target.closest(SCOPE) && !target.classList.contains("jsp-project-tag");
+    }
+    const element = target instanceof Element ? target : target?.parentElement;
+    if (element?.closest(SCOPE)) return true;
+    for (const node of mutation.addedNodes || []) {
+      if (node instanceof Element &&
+          (node.matches(SCOPE) || node.querySelector(SCOPE))) return true;
+    }
+    return false;
+  }
+  if (document.body) {
+    const observer = new MutationObserver(changes => {
+      if (changes.some(relevantChange)) scheduleDecorate();
+    });
+    observer.observe(document.body, {
+      childList: true, characterData: true, subtree: true,
+      attributes: true, attributeFilter: ["href", "class"]
+    });
+  }
+  scheduleDecorate();
+  document.fonts?.ready?.then(scheduleDecorate);
 
   const projectCache = new Map();
   let cursor = null, listComplete = false, inFlight = null, lastFailure = 0;
@@ -224,6 +373,7 @@
   function render(id) {
     if (!card || id !== activeId) return;
     const info = projectCache.get(id);
+    card.style.setProperty("--jsp-accent", projectColor(id));
     titleEl.textContent = info?.name || nameFromSidebar(id) || "项目名称暂不可用";
     descEl.textContent = info?.description || "";
     descEl.hidden = !info?.description;
@@ -275,6 +425,7 @@
   function activate(link) {
     const id = projectIdFromHref(link.getAttribute("href"));
     if (!id) return;
+    decorateLink(link);
     cancelClose();
     if (active && active !== link) active.removeAttribute("aria-describedby");
     active = link;
@@ -314,5 +465,5 @@
   }, true);
   document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
   window.addEventListener("scroll", position, true);
-  window.addEventListener("resize", position);
+  window.addEventListener("resize", () => { scheduleDecorate(); position(); });
 })();
