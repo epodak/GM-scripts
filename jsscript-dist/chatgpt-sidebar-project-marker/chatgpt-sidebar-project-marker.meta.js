@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.222918
-// @description  为最多 500 个项目按 ID 稳定生成高明度 OKLCH 颜色；保留标题浅色背景与同色悬浮卡片，不绘制竖条。
+// @version      2026.10.11.224135
+// @description  基于最终可见 RGB 去重并区分相邻项目，保留浅色标题背景、同色悬浮卡片和普通对话原貌。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none

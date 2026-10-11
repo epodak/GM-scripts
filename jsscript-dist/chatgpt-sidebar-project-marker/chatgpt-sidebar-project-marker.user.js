@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.222918
-// @description  为最多 500 个项目按 ID 稳定生成高明度 OKLCH 颜色；保留标题浅色背景与同色悬浮卡片，不绘制竖条。
+// @version      2026.10.11.224135
+// @description  基于最终可见 RGB 去重并区分相邻项目，保留浅色标题背景、同色悬浮卡片和普通对话原貌。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -31,7 +31,8 @@
     // inherited computed var() values would otherwise all use the fallback blue.
     '.jsp-project-tag,#jsp-project-card{',
     '--jsp-main:var(--jsp-accent,#2563eb);',
-    '--jsp-tint:color-mix(in srgb,var(--jsp-accent,#2563eb) 13%,transparent)}',
+    '--jsp-tint:var(--jsp-light-tint,',
+    'color-mix(in srgb,var(--jsp-accent,#2563eb) 13%,transparent))}',
     'html.dark,html[data-theme="dark"]{--jsp-surface:#25262a;',
     '--jsp-text:#f5f5f5;--jsp-muted:#a8afb9}',
     'html.dark .jsp-project-tag,html.dark #jsp-project-card,',
@@ -77,29 +78,118 @@
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
 
-  // Perceptually more uniform than HSL and much larger than a 12-color list.
-  // Stable ID hashing -> continuous OKLCH hue, chroma and lightness.
-  // Bounded lightness excludes black/nearly-black; hues cover the full circle.
-  // 500 colors can be numerically different without being reliably recognized
-  // as 500 distinct categories: the project name remains the true identifier.
+  // Assign colors using their final 8-bit appearance on a white sidebar.
+  // Different OKLCH strings can collapse to the same RGB after 13% blending.
+  // The in-memory registry avoids exact collisions for distinct observed IDs.
+  // The nearby-ID check additionally separates visibly adjacent projects.
   function mix32(value) {
     value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
     value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
     return (value ^ (value >>> 16)) >>> 0;
   }
 
-  function projectColor(id) {
+  function hashProjectId(id) {
     let hash = 2166136261;
     for (let i = 0; i < id.length; i++) {
       hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
     }
-    const hue = (mix32(hash ^ 0x9e3779b9) / 0x100000000) * 360;
+    return hash >>> 0;
+  }
+
+  // OKLCH -> sRGB (8-bit). Once reduced to RGB, the intended
+  // translucent tint is flattened over white into an exact hex color.
+  // This avoids compositor-level collisions from separate CSS color-mix calls.
+  function accentRGB(lightness, chroma, hue) {
+    const angle = hue * Math.PI / 180;
+    const a = chroma * Math.cos(angle), b = chroma * Math.sin(angle);
+    const l = (lightness + 0.3963377774*a + 0.2158037573*b) ** 3;
+    const m = (lightness - 0.1055613458*a - 0.0638541728*b) ** 3;
+    const s = (lightness - 0.0894841775*a - 1.2914855480*b) ** 3;
+    const toByte = value => {
+      const encoded = value <= 0.0031308
+        ? 12.92 * value
+        : 1.055 * value ** (1 / 2.4) - 0.055;
+      return Math.round(Math.max(0, Math.min(1, encoded)) * 255);
+    };
+    return [
+      toByte(4.0767416621*l - 3.3077115913*m + 0.2309699292*s),
+      toByte(-1.2684380046*l + 2.6097574011*m - 0.3413193965*s),
+      toByte(-0.0041960863*l - 0.7034186147*m + 1.7076147010*s)
+    ];
+  }
+
+  function colorCandidate(id, attempt = 0) {
+    const hash = hashProjectId(id);
+    // The first candidate is compatible with the previous OKLCH mapping.
+    // Only collisions/very similar neighbors trigger a golden-angle shift.
+    const hue = ((mix32(hash ^ 0x9e3779b9) / 0x100000000) * 360 +
+      attempt * 137.507764) % 360;
     const lightness = 0.62 +
       (mix32(hash ^ 0x85ebca6b) / 0x100000000) * 0.12;
     const chroma = 0.13 +
       (mix32(hash ^ 0xc2b2ae35) / 0x100000000) * 0.075;
-    return "oklch(" + (lightness * 100).toFixed(2) + "% " +
-      chroma.toFixed(4) + " " + hue.toFixed(2) + ")";
+    const channels = accentRGB(lightness, chroma, hue)
+      .map(channel => Math.round(255 * 0.87 + channel * 0.13));
+    return {
+      accent: "oklch(" + (lightness * 100).toFixed(2) + "% " +
+        chroma.toFixed(4) + " " + hue.toFixed(2) + ")",
+      tint: "#" + channels.map(channel => channel.toString(16)
+        .padStart(2, "0")).join(""),
+      channels
+    };
+  }
+
+  function tintDistance(left, right) {
+    return Math.hypot(
+      left.channels[0] - right.channels[0],
+      left.channels[1] - right.channels[1],
+      left.channels[2] - right.channels[2]
+    );
+  }
+
+  const allocatedProjects = new Map();
+  const occupiedTints = new Set();
+  const MIN_NEARBY_DIFFERENCE = 13;
+
+  function projectTheme(id, precedingIds = []) {
+    if (allocatedProjects.has(id)) return allocatedProjects.get(id);
+    const nearby = precedingIds.map(project => allocatedProjects.get(project))
+      .filter(Boolean);
+    let chosen = null, bestGap = -1;
+    for (let attempt = 0; attempt < 48; attempt++) {
+      const candidate = colorCandidate(id, attempt);
+      if (occupiedTints.has(candidate.tint)) continue;
+      const gap = nearby.length
+        ? Math.min(...nearby.map(item => tintDistance(candidate, item)))
+        : Infinity;
+      if (gap > bestGap) {
+        chosen = candidate;
+        bestGap = gap;
+      }
+      if (gap >= MIN_NEARBY_DIFFERENCE) {
+        chosen = candidate;
+        break;
+      }
+    }
+    if (!chosen) {
+      // Extremely large sets can exhaust a candidate sequence; extend
+      // deterministically rather than reuse another project's displayed RGB.
+      for (let attempt = 48; attempt < 20000; attempt++) {
+        const candidate = colorCandidate(id, attempt);
+        if (!occupiedTints.has(candidate.tint)) {
+          chosen = candidate;
+          break;
+        }
+      }
+    }
+    if (!chosen) return colorCandidate(id);
+    allocatedProjects.set(id, chosen);
+    occupiedTints.add(chosen.tint);
+    return chosen;
+  }
+
+  function projectColor(id) {
+    return projectTheme(id).accent;
   }
 
   // Measure the visible title glyphs to position the background only.
@@ -144,7 +234,7 @@
     };
   }
 
-  function decorateLink(link) {
+  function decorateLink(link, precedingIds = []) {
     const id = projectIdFromHref(link.getAttribute("href"));
     if (!id) return;
     const found = titleTextRectangle(link);
@@ -160,7 +250,9 @@
       return;
     }
     const style = link.style;
-    style.setProperty("--jsp-accent", projectColor(id));
+    const theme = projectTheme(id, precedingIds);
+    style.setProperty("--jsp-accent", theme.accent);
+    style.setProperty("--jsp-light-tint", theme.tint);
     style.setProperty("--jsp-bg-x", geom.backgroundX.toFixed(1) + "px");
     style.setProperty("--jsp-bg-y", geom.backgroundY.toFixed(1) + "px");
     style.setProperty("--jsp-bg-w", geom.backgroundWidth.toFixed(1) + "px");
@@ -170,8 +262,14 @@
 
   let decorationQueued = false;
   function decorateAll() {
+    const precedingIds = [];
     for (const link of document.querySelectorAll(CSS_TARGET)) {
-      decorateLink(link);
+      const id = projectIdFromHref(link.getAttribute("href"));
+      decorateLink(link, precedingIds);
+      if (id && precedingIds[precedingIds.length - 1] !== id) {
+        precedingIds.push(id);
+        if (precedingIds.length > 3) precedingIds.shift();
+      }
     }
   }
   function scheduleDecorate() {
