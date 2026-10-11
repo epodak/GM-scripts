@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.060450
-// @description  以蓝绿色细条和低饱和背景区分 ChatGPT 侧边栏里的项目对话；普通对话保持原样。
+// @version      2026.10.11.061027
+// @description  只在 ChatGPT 侧边栏项目对话标题前显示紫色小竖条；悬停显示项目名称及详情，不改变行背景。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none

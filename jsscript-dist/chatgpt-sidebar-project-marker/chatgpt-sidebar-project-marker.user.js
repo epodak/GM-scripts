@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.060450
-// @description  以蓝绿色细条和低饱和背景区分 ChatGPT 侧边栏里的项目对话；普通对话保持原样。
+// @version      2026.10.11.061027
+// @description  只在 ChatGPT 侧边栏项目对话标题前显示紫色小竖条；悬停显示项目名称及详情，不改变行背景。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -25,16 +25,18 @@
   const CSS_TARGET = ':where(' + SCOPE + ') a:is([href^="/g/g-p-"],' +
     '[href^="https://chatgpt.com/g/g-p-"])[href*="/c/"]';
   const css = [
-    ':root{--jsp-rail:#0e7490;--jsp-bg:rgba(8,145,178,.09);',
-    '--jsp-hover:rgba(8,145,178,.16);--jsp-border:rgba(8,145,178,.18);',
+    // A marker must use layout space, not an inset overlay on the first glyph.
+    // One consistent color communicates "project"; no arbitrary color collisions.
+    ':root{--jsp-rail:#7c3aed;--jsp-border:rgba(124,58,237,.19);',
     '--jsp-surface:#fff;--jsp-text:#20242a;--jsp-muted:#68717d}',
-    'html.dark,html[data-theme="dark"]{--jsp-rail:#67e8f9;',
-    '--jsp-bg:rgba(34,211,238,.10);--jsp-hover:rgba(34,211,238,.18);',
-    '--jsp-border:rgba(34,211,238,.22);--jsp-surface:#25262a;',
+    'html.dark,html[data-theme="dark"]{--jsp-rail:#c084fc;',
+    '--jsp-border:rgba(192,132,252,.27);--jsp-surface:#25262a;',
     '--jsp-text:#f5f5f5;--jsp-muted:#a8afb9}',
-    CSS_TARGET+'{background:var(--jsp-bg)!important;border-radius:8px;',
-    'box-shadow:inset 3px 0 var(--jsp-rail),inset 0 0 0 1px var(--jsp-border)!important}',
-    CSS_TARGET+':hover{background:var(--jsp-hover)!important}',
+    CSS_TARGET+'::before{content:"";display:inline-block;',
+    'inline-size:3px;block-size:15px;min-inline-size:3px;',
+    'margin-inline-end:8px;flex:0 0 3px;vertical-align:-2px;',
+    'border-radius:3px;background-color:var(--jsp-rail);',
+    'pointer-events:none;}',
     '#jsp-project-card{position:fixed;z-index:2147483600;',
     'box-sizing:border-box;width:min(330px,calc(100vw - 16px));',
     'padding:14px 15px;background:var(--jsp-surface);color:var(--jsp-text);',
