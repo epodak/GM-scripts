@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.224135
-// @description  基于最终可见 RGB 去重并区分相邻项目，保留浅色标题背景、同色悬浮卡片和普通对话原貌。
+// @version      2026.10.11.225601
+// @description  区分 ChatGPT 项目对话颜色，悬浮显示项目详情，并用同色细贝塞尔曲线连接当前可见的同项目对话。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none

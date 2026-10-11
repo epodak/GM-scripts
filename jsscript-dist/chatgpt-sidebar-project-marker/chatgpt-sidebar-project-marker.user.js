@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.224135
-// @description  基于最终可见 RGB 去重并区分相邻项目，保留浅色标题背景、同色悬浮卡片和普通对话原貌。
+// @version      2026.10.11.225601
+// @description  区分 ChatGPT 项目对话颜色，悬浮显示项目详情，并用同色细贝塞尔曲线连接当前可见的同项目对话。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -71,7 +71,11 @@
     '#jsp-project-card a{color:var(--jsp-main);text-decoration:none;',
     'font-weight:650;white-space:nowrap}',
     '#jsp-project-card a:hover{text-decoration:underline}',
-    '#jsp-project-card a:focus-visible{outline:2px solid var(--jsp-main)}'
+    '#jsp-project-card a:focus-visible{outline:2px solid var(--jsp-main)}',
+    // Separate, non-interactive layer below the hovercard; never changes text flow.
+    '#jsp-project-links{position:fixed;inset:0;width:100vw;height:100vh;',
+    'overflow:visible;pointer-events:none;z-index:2147483500}',
+    '#jsp-project-links[hidden]{display:none!important}'
   ].join("\n");
   const style = document.createElement("style");
   style.id = STYLE_ID;
@@ -260,6 +264,8 @@
     link.classList.add("jsp-project-tag");
   }
 
+  // Initialized before the first decoration frame (including synchronous test RAF).
+  let active = null, activeId = null, card = null;
   let decorationQueued = false;
   function decorateAll() {
     const precedingIds = [];
@@ -278,6 +284,7 @@
     requestAnimationFrame(() => {
       decorationQueued = false;
       decorateAll();
+      if (activeId) scheduleConnections();
     });
   }
 
@@ -310,10 +317,142 @@
   scheduleDecorate();
   document.fonts?.ready?.then(scheduleDecorate);
 
+  // Visible relationship overlay: only while a project chat is hovered/focused.
+  // Paths are viewport-aligned and clipped to the sidebar's scroll viewport.
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let connectionsLayer = null;
+  let connectionPaths = null;
+  let connectionClip = null;
+  let connectionsQueued = false;
+
+  function intersectRect(a, b) {
+    return {
+      left: Math.max(a.left, b.left),
+      top: Math.max(a.top, b.top),
+      right: Math.min(a.right, b.right),
+      bottom: Math.min(a.bottom, b.bottom)
+    };
+  }
+
+  function linkVisibleClip(link) {
+    let clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    for (let parent = link.parentElement; parent && parent !== document.body;
+      parent = parent.parentElement) {
+      const overflow = getComputedStyle(parent);
+      if (/(auto|scroll|hidden|clip)/.test(
+        overflow.overflowX + " " + overflow.overflowY
+      )) {
+        clip = intersectRect(clip, parent.getBoundingClientRect());
+      }
+    }
+    return clip;
+  }
+
+  function visibleProjectNodes(id) {
+    const nodes = [];
+    for (const link of document.querySelectorAll(CSS_TARGET + ".jsp-project-tag")) {
+      if (projectIdFromHref(link.getAttribute("href")) !== id) continue;
+      const rect = link.getBoundingClientRect();
+      const clip = linkVisibleClip(link);
+      if (rect.bottom <= clip.top || rect.top >= clip.bottom ||
+          rect.right <= clip.left || rect.left >= clip.right) continue;
+      const style = link.style;
+      const bgX = parseFloat(style.getPropertyValue("--jsp-bg-x"));
+      const bgY = parseFloat(style.getPropertyValue("--jsp-bg-y"));
+      const bgW = parseFloat(style.getPropertyValue("--jsp-bg-w"));
+      const bgH = parseFloat(style.getPropertyValue("--jsp-bg-h"));
+      if (![bgX, bgY, bgW, bgH].every(Number.isFinite) ||
+          bgW < 4 || bgH < 4) continue;
+      const y = rect.top + bgY + bgH / 2;
+      if (y <= clip.top + 2 || y >= clip.bottom - 2) continue;
+      const x = Math.min(rect.left + bgX + bgW + 6, clip.right - 6);
+      if (x <= clip.left + 2) continue;
+      nodes.push({ x, y, clip });
+    }
+    return nodes.sort((a, b) => a.y - b.y);
+  }
+
+  function connectionPath(a, b, clipRight) {
+    // Right-side, soft cubic "spine": no straight line through title text.
+    const rail = Math.min(clipRight - 5, Math.max(a.x, b.x) + 22);
+    const p = value => Number(value.toFixed(1));
+    return "M " + p(a.x) + " " + p(a.y) +
+      " C " + p(rail) + " " + p(a.y) +
+      ", " + p(rail) + " " + p(b.y) +
+      ", " + p(b.x) + " " + p(b.y);
+  }
+
+  function ensureConnectionsLayer() {
+    if (connectionsLayer) return;
+    connectionsLayer = document.createElementNS(SVG_NS, "svg");
+    connectionsLayer.id = "jsp-project-links";
+    connectionsLayer.hidden = true;
+    connectionsLayer.setAttribute("aria-hidden", "true");
+    connectionsLayer.setAttribute("focusable", "false");
+
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const clipPath = document.createElementNS(SVG_NS, "clipPath");
+    clipPath.id = "jsp-project-links-clip";
+    connectionClip = document.createElementNS(SVG_NS, "rect");
+    clipPath.appendChild(connectionClip);
+    defs.appendChild(clipPath);
+    connectionPaths = document.createElementNS(SVG_NS, "g");
+    connectionPaths.setAttribute("clip-path", "url(#jsp-project-links-clip)");
+    connectionsLayer.append(defs, connectionPaths);
+    document.body.appendChild(connectionsLayer);
+  }
+
+  function clearConnections() {
+    if (!connectionsLayer) return;
+    connectionsLayer.hidden = true;
+    connectionPaths.replaceChildren();
+  }
+
+  function drawConnections() {
+    if (!activeId || !active?.isConnected) {
+      clearConnections();
+      return;
+    }
+    const nodes = visibleProjectNodes(activeId);
+    if (nodes.length < 2) {
+      clearConnections();
+      return;
+    }
+    ensureConnectionsLayer();
+    // Limit the drawing to the current hovered item's sidebar scroll region.
+    const clip = linkVisibleClip(active);
+    connectionsLayer.setAttribute("viewBox", "0 0 " + innerWidth + " " + innerHeight);
+    connectionClip.setAttribute("x", String(clip.left));
+    connectionClip.setAttribute("y", String(clip.top));
+    connectionClip.setAttribute("width", String(Math.max(0, clip.right - clip.left)));
+    connectionClip.setAttribute("height", String(Math.max(0, clip.bottom - clip.top)));
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i + 1 < nodes.length; i++) {
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", connectionPath(nodes[i], nodes[i + 1], clip.right));
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", projectTheme(activeId).accent);
+      path.setAttribute("stroke-opacity", "0.58");
+      path.setAttribute("stroke-width", "1.05");
+      path.setAttribute("stroke-linecap", "round");
+      fragment.appendChild(path);
+    }
+    connectionPaths.replaceChildren(fragment);
+    connectionsLayer.hidden = false;
+  }
+
+  function scheduleConnections() {
+    if (connectionsQueued) return;
+    connectionsQueued = true;
+    requestAnimationFrame(() => {
+      connectionsQueued = false;
+      drawConnections();
+    });
+  }
+
   const projectCache = new Map();
   let cursor = null, listComplete = false, inFlight = null, lastFailure = 0;
   let token = null; // Memory-only: no storage, logging or external transmission.
-  let active = null, activeId = null, card = null;
   let closeTimer = null, fetchTimer = null;
   let titleEl, descEl, metaEl, idEl, openEl;
 
@@ -510,6 +649,7 @@
     if (fetchTimer) clearTimeout(fetchTimer);
     fetchTimer = null;
     if (card) card.hidden = true;
+    clearConnections();
     if (active) active.removeAttribute("aria-describedby");
     active = null;
     activeId = null;
@@ -530,6 +670,7 @@
     card.hidden = false;
     active.setAttribute("aria-describedby", card.id);
     render(id);
+    scheduleConnections();
     if (fetchTimer) clearTimeout(fetchTimer);
     if (projectCache.has(id) || listComplete) return;
     fetchTimer = setTimeout(async () => {
@@ -560,6 +701,6 @@
     if (active && !active.contains(e.target) && !card?.contains(e.target)) hide();
   }, true);
   document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
-  window.addEventListener("scroll", position, true);
-  window.addEventListener("resize", () => { scheduleDecorate(); position(); });
+  window.addEventListener("scroll", () => { position(); scheduleConnections(); }, true);
+  window.addEventListener("resize", () => { scheduleDecorate(); position(); scheduleConnections(); });
 })();
