@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.062149
-// @description  按项目 ID 稳定分配颜色，项目标题前竖条、标题局部浅色背景及悬浮卡片统一色系；保持原生侧栏布局。
+// @version      2026.10.11.062528
+// @description  按项目 ID 稳定分配颜色，仅在项目标题文字后显示浅色背景；悬浮项目详情卡片使用同一色系，不绘制竖条。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -45,11 +45,6 @@
     'width:var(--jsp-bg-w);height:var(--jsp-bg-h);',
     'background:var(--jsp-tint);border-radius:5px;',
     'pointer-events:none;z-index:-1}',
-    CSS_TARGET+'.jsp-project-tag::after{content:"";position:absolute;',
-    'inset-inline-start:var(--jsp-bar-x);top:var(--jsp-bar-y);',
-    'width:3px;height:15px;transform:translateY(-50%);',
-    'background:var(--jsp-main);border-radius:3px;',
-    'pointer-events:none;z-index:1}',
     '#jsp-project-card{position:fixed;z-index:2147483600;',
     'box-sizing:border-box;width:min(330px,calc(100vw - 16px));',
     'padding:14px 15px;color:var(--jsp-text);',
@@ -61,9 +56,6 @@
     'font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
     '#jsp-project-card[hidden]{display:none!important}',
     '#jsp-project-card .jsp-label{font-size:11px;color:var(--jsp-main);font-weight:700}',
-    '#jsp-project-card .jsp-label::before{content:"";display:inline-block;',
-    'width:3px;height:11px;margin-right:6px;vertical-align:-1px;',
-    'background:var(--jsp-main);border-radius:2px}',
     '#jsp-project-card .jsp-title{font-size:15px;font-weight:650;',
     'line-height:1.4;overflow-wrap:anywhere;margin-top:4px}',
     '#jsp-project-card .jsp-desc{margin:8px 0 0;color:var(--jsp-muted);',
@@ -100,8 +92,8 @@
     return PALETTE[(hash >>> 0) % PALETTE.length];
   }
 
-  // Measure actual text glyphs; pseudo-elements are absolutely positioned.
-  // This prevents the flex/wrapping offset seen with inline ::before markers.
+  // Measure the visible title glyphs to position the background only.
+  // The decoration never participates in flex layout or obscures text.
   function titleTextRectangle(link) {
     const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
     let text;
@@ -135,8 +127,6 @@
     const visibleWidth = Math.max(0,
       Math.min(textRect.width, clipRight - textRect.left));
     return {
-      markerX: Math.max(2, x - 13),
-      markerY: y + textRect.height / 2,
       backgroundX: Math.max(0, x - 5),
       backgroundY: y - 3,
       backgroundWidth: visibleWidth + 10,
@@ -149,7 +139,7 @@
     if (!id) return;
     const found = titleTextRectangle(link);
     if (!found) {
-      // If DOM layout changes, do not draw a marker in the wrong place.
+      // If DOM layout changes, avoid painting the wrong text.
       link.classList.remove("jsp-project-tag");
       return;
     }
@@ -161,8 +151,6 @@
     }
     const style = link.style;
     style.setProperty("--jsp-accent", projectColor(id));
-    style.setProperty("--jsp-bar-x", geom.markerX.toFixed(1) + "px");
-    style.setProperty("--jsp-bar-y", geom.markerY.toFixed(1) + "px");
     style.setProperty("--jsp-bg-x", geom.backgroundX.toFixed(1) + "px");
     style.setProperty("--jsp-bg-y", geom.backgroundY.toFixed(1) + "px");
     style.setProperty("--jsp-bg-w", geom.backgroundWidth.toFixed(1) + "px");
