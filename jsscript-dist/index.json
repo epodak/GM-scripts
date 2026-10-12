@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-12T00:11:59.397Z",
+  "generatedAt": "2026-10-12T01:45:35.618Z",
   "scripts": [
     {
       "id": "example-hello",
@@ -14,7 +14,7 @@
       "id": "chatgpt-sidebar-project-marker",
       "kind": "first-party",
       "name": "ChatGPT Sidebar Project Marker",
-      "version": "2026.10.12.001021",
+      "version": "2026.10.12.014520",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.meta.js"
     }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.12.001021
+// @version      2026.10.12.014520
 // @description  区分 ChatGPT 项目对话颜色，悬浮显示项目详情，并用同色细贝塞尔曲线连接当前可见的同项目对话。
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -46,45 +46,49 @@
       "pointer-events:none;z-index:-1}",
       // Large product-style card with consistent per-project palette.
       "#jsp-project-card{position:fixed;z-index:2147483600;",
-      "box-sizing:border-box;width:min(490px,calc(100vw - 24px));",
+      "box-sizing:border-box;width:min(408px,calc(100vw - 24px));",
       "max-height:calc(100vh - 24px);overflow:auto;",
-      "padding:22px 24px 18px;color:var(--jsp-text);",
+      "padding:16px 18px 14px;color:var(--jsp-text);",
       "background:color-mix(in srgb,var(--jsp-main) 4%,var(--jsp-surface));",
       "border:1px solid color-mix(in srgb,var(--jsp-main) 33%,#e5e7eb);",
-      "border-radius:20px;box-shadow:0 16px 44px rgba(15,23,42,.12);",
-      'font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      "border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.12);",
+      'font:12.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}',
       "#jsp-project-card[hidden]{display:none!important}",
       "#jsp-project-card .jsp-hero{display:flex;align-items:center;gap:16px}",
-      "#jsp-project-card .jsp-folder{width:56px;height:56px;flex:0 0 56px;",
+      "#jsp-project-card .jsp-folder{width:44px;height:44px;flex:0 0 44px;",
       "display:flex;align-items:center;justify-content:center;",
       "border-radius:16px;color:var(--jsp-main);",
       "background:color-mix(in srgb,var(--jsp-main) 13%,transparent)}",
       "#jsp-project-card .jsp-heading{min-width:0;flex:1}",
       "#jsp-project-card .jsp-eyebrow{color:var(--jsp-main);",
-      "font-size:12px;font-weight:750;letter-spacing:.085em;",
+      "font-size:10.5px;font-weight:750;letter-spacing:.08em;",
       "text-transform:uppercase}",
       "#jsp-project-card .jsp-title{color:var(--jsp-text);",
-      "font-size:22px;line-height:1.24;font-weight:760;",
+      "font-size:18px;line-height:1.28;font-weight:720;",
       "overflow-wrap:anywhere;margin-top:6px}",
-      "#jsp-project-card .jsp-desc{margin:18px 0 0;",
-      "font-size:14px;line-height:1.55;color:var(--jsp-muted);",
-      "white-space:pre-wrap;overflow-wrap:anywhere}",
-      "#jsp-project-card .jsp-divider{height:1px;margin:20px 0 15px;",
+      "#jsp-project-card .jsp-desc{margin:12px 0 0;",
+      "font-size:12.5px;line-height:1.5;color:var(--jsp-muted);",
+      "white-space:pre-wrap;overflow-wrap:anywhere;max-height:7.5em;overflow-y:auto;scrollbar-width:thin}",
+      "#jsp-project-card .jsp-desc-label{margin-top:12px;",
+      "font-size:10px;font-weight:700;letter-spacing:.025em;color:var(--jsp-main)}",
+      "#jsp-project-card .jsp-desc-label[hidden]{display:none!important}",
+      "#jsp-project-card .jsp-desc-label:not([hidden])+.jsp-desc{margin-top:4px}",
+      "#jsp-project-card .jsp-divider{height:1px;margin:14px 0 12px;",
       "background:color-mix(in srgb,var(--jsp-main) 19%,transparent)}",
-      "#jsp-project-card .jsp-rows{display:grid;gap:15px}",
+      "#jsp-project-card .jsp-rows{display:grid;gap:11px}",
       "#jsp-project-card .jsp-row{display:flex;align-items:center;",
       "justify-content:space-between;gap:12px;min-width:0}",
       "#jsp-project-card .jsp-key{display:flex;align-items:center;",
-      "gap:11px;min-width:0;color:var(--jsp-muted)}",
-      "#jsp-project-card .jsp-key svg{width:20px;height:20px;",
-      "flex:0 0 20px;color:var(--jsp-muted)}",
+      "gap:8px;min-width:0;color:var(--jsp-muted)}",
+      "#jsp-project-card .jsp-key svg{width:16px;height:16px;",
+      "flex:0 0 16px;color:var(--jsp-muted)}",
       "#jsp-project-card .jsp-value{min-width:0;text-align:right;",
-      "color:var(--jsp-text);font-size:14px;font-weight:550;",
+      "color:var(--jsp-text);font-size:12px;font-weight:550;",
       "font-variant-numeric:tabular-nums}",
       "#jsp-project-card .jsp-id-wrap{display:flex;",
       "align-items:center;justify-content:flex-end;gap:10px;min-width:0}",
       "#jsp-project-card .jsp-id{display:block;min-width:0;",
-      "max-width:185px;white-space:nowrap;overflow:hidden;",
+      "max-width:140px;white-space:nowrap;overflow:hidden;",
       "text-overflow:ellipsis;direction:ltr;color:var(--jsp-muted)}",
       "#jsp-project-card .jsp-copy{display:inline-flex;",
       "align-items:center;justify-content:center;flex:0 0 26px;",
@@ -96,7 +100,7 @@
       "#jsp-project-card .jsp-actions{display:flex;justify-content:flex-end;",
       "margin-top:14px}",
       "#jsp-project-card .jsp-open{color:var(--jsp-main);",
-      "font-size:13px;text-decoration:none;font-weight:700}",
+      "font-size:12px;text-decoration:none;font-weight:700}",
       "#jsp-project-card .jsp-open:hover{text-decoration:underline}",
       "#jsp-project-card .jsp-open:focus-visible{outline:2px solid var(--jsp-main);outline-offset:2px}",
       "#jsp-project-card .jsp-status{position:absolute;width:1px;height:1px;",
@@ -436,7 +440,7 @@
     let cursor = null, listComplete = false, inFlight = null, lastFailure = 0;
     let token = null;
     let closeTimer = null, fetchTimer = null;
-    let titleEl, descEl, countEl, updatedEl, idEl, openEl, copyEl, copyStatusEl;
+    let titleEl, descEl, descLabelEl, countEl, updatedEl, idEl, openEl, copyEl, copyStatusEl;
     function projectIdFromHref(href) {
       const path = String(href || "").replace(/^https:\/\/chatgpt\.com/i, "");
       const match = path.match(/^\/g\/(g-p-[a-z0-9-]{8,})\/c\/[^/?#]+\/?(?:[?#].*)?$/i);
@@ -466,7 +470,9 @@
       return {
         id,
         name: cleanText(display.name || gizmo?.name || item?.name, 150),
-        description: cleanText(display.description || gizmo?.description || item?.description, 400),
+        description: cleanText(display.description || gizmo?.description || item?.description, 600),
+        // Project instructions are separate from the often-empty display.description.
+        instructions: cleanText(gizmo?.instructions || item?.instructions || item?.gizmo?.instructions, 900),
         updated: gizmo?.updated_at || gizmo?.updated_time || item?.updated_at || item?.updated_time || null,
         count: count === void 0 ? null : count
       };
@@ -556,8 +562,8 @@
     function cardIcon(kind) {
       const svg = document.createElementNS(SVG_NS, "svg");
       svg.setAttribute("viewBox", "0 0 24 24");
-      svg.setAttribute("width", kind === "folder" ? "30" : "20");
-      svg.setAttribute("height", kind === "folder" ? "30" : "20");
+      svg.setAttribute("width", kind === "folder" ? "24" : "18");
+      svg.setAttribute("height", kind === "folder" ? "24" : "18");
       svg.setAttribute("fill", "none");
       svg.setAttribute("stroke", "currentColor");
       svg.setAttribute("stroke-width", "1.75");
@@ -610,6 +616,8 @@
       titleEl = cardElement("div", "jsp-title");
       heading.appendChild(titleEl);
       hero.append(folder, heading);
+      descLabelEl = cardElement("div", "jsp-desc-label");
+      descLabelEl.hidden = true;
       descEl = cardElement("p", "jsp-desc", "暂无项目描述");
       const divider = cardElement("div", "jsp-divider");
       const rows = cardElement("div", "jsp-rows");
@@ -634,7 +642,7 @@
       copyStatusEl = cardElement("span", "jsp-status");
       copyStatusEl.setAttribute("role", "status");
       copyStatusEl.setAttribute("aria-live", "polite");
-      card.append(hero, descEl, divider, rows, actions, copyStatusEl);
+      card.append(hero, descLabelEl, descEl, divider, rows, actions, copyStatusEl);
       document.body.appendChild(card);
       copyEl.addEventListener("click", async (event) => {
         event.preventDefault();
@@ -673,7 +681,11 @@
       card.style.setProperty("--jsp-accent", projectColor(id));
       card.dataset.projectId = id;
       titleEl.textContent = info?.name || nameFromSidebar(id) || "项目名称暂不可用";
-      descEl.textContent = info?.description || (!info && Date.now() - lastFailure >= 12e4 && !listComplete ? "正在读取项目资料…" : "暂无项目描述");
+      const hasDescription = Boolean(info?.description);
+      const hasInstructions = Boolean(info?.instructions);
+      descLabelEl.hidden = !hasInstructions || hasDescription;
+      descLabelEl.textContent = hasInstructions && !hasDescription ? "项目指令（节选）" : "";
+      descEl.textContent = hasDescription ? info.description : hasInstructions ? info.instructions : !info && Date.now() - lastFailure >= 12e4 && !listComplete ? "正在读取项目资料…" : "暂无项目描述";
       countEl.textContent = info?.count === null || info?.count === void 0 ? "—" : String(info.count);
       updatedEl.textContent = formatDate(info?.updated) || "—";
       idEl.textContent = id;
@@ -686,7 +698,7 @@
     function position() {
       if (!active || !card || card.hidden) return;
       const rect = active.getBoundingClientRect();
-      const width = card.offsetWidth || 490, height = card.offsetHeight || 260;
+      const width = card.offsetWidth || 408, height = card.offsetHeight || 220;
       const gap = 14;
       let x = rect.right + gap;
       if (x + width > innerWidth - 12) x = rect.left - width - gap;
