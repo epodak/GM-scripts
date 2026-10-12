@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-12T12:35:31.101Z",
+  "generatedAt": "2026-10-12T12:52:37.272Z",
   "scripts": [
     {
       "id": "example-hello",
@@ -22,7 +22,7 @@
       "id": "smartedu-textbook-pdf",
       "kind": "first-party",
       "name": "国家中小学智慧教育平台 · 电子课本 PDF 下载",
-      "version": "2026.10.12.123512",
+      "version": "2026.10.12.124956",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/smartedu-textbook-pdf/smartedu-textbook-pdf.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/smartedu-textbook-pdf/smartedu-textbook-pdf.meta.js"
     }

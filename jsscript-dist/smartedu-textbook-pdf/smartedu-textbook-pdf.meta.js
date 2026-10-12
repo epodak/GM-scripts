@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         国家中小学智慧教育平台 · 电子课本 PDF 下载
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.12.123512
+// @version      2026.10.12.124956
 // @description  自动识别教材详情页 contentId 和真实 PDF 地址；一键下载并自动切换官方 CDN 镜像，支持 SPA。
 // @author       epodak
 // @match        https://basic.smartedu.cn/tchMaterial*
