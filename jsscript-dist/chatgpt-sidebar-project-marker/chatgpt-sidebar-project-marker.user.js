@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Sidebar Project Marker
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.230952
+// @version      2026.10.12.001021
 // @description  区分 ChatGPT 项目对话颜色，悬浮显示项目详情，并用同色细贝塞尔曲线连接当前可见的同项目对话。
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -44,32 +44,74 @@
       "width:var(--jsp-bg-w);height:var(--jsp-bg-h);",
       "background:var(--jsp-tint);border-radius:5px;",
       "pointer-events:none;z-index:-1}",
+      // Large product-style card with consistent per-project palette.
       "#jsp-project-card{position:fixed;z-index:2147483600;",
-      "box-sizing:border-box;width:min(330px,calc(100vw - 16px));",
-      "padding:14px 15px;color:var(--jsp-text);",
-      "background:linear-gradient(165deg,",
-      "color-mix(in srgb,var(--jsp-main) 11%,var(--jsp-surface)),",
-      "var(--jsp-surface) 76%);",
-      "border:1px solid color-mix(in srgb,var(--jsp-main) 38%,transparent);",
-      "border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.16);",
-      'font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      "box-sizing:border-box;width:min(490px,calc(100vw - 24px));",
+      "max-height:calc(100vh - 24px);overflow:auto;",
+      "padding:22px 24px 18px;color:var(--jsp-text);",
+      "background:color-mix(in srgb,var(--jsp-main) 4%,var(--jsp-surface));",
+      "border:1px solid color-mix(in srgb,var(--jsp-main) 33%,#e5e7eb);",
+      "border-radius:20px;box-shadow:0 16px 44px rgba(15,23,42,.12);",
+      'font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
       "#jsp-project-card[hidden]{display:none!important}",
-      "#jsp-project-card .jsp-label{font-size:11px;color:var(--jsp-main);font-weight:700}",
-      "#jsp-project-card .jsp-title{font-size:15px;font-weight:650;",
-      "line-height:1.4;overflow-wrap:anywhere;margin-top:4px}",
-      "#jsp-project-card .jsp-desc{margin:8px 0 0;color:var(--jsp-muted);",
-      "white-space:normal;overflow-wrap:anywhere;max-height:5.7em;overflow:hidden}",
-      "#jsp-project-card .jsp-meta{margin:8px 0;color:var(--jsp-muted);font-size:11px}",
-      "#jsp-project-card .jsp-foot{display:flex;align-items:center;",
-      "justify-content:space-between;gap:8px;margin-top:9px;",
-      "border-top:1px solid color-mix(in srgb,var(--jsp-main) 27%,transparent);",
-      "padding-top:10px;font-size:11px}",
-      "#jsp-project-card .jsp-id{overflow:hidden;white-space:nowrap;",
-      "text-overflow:ellipsis;color:var(--jsp-muted)}",
-      "#jsp-project-card a{color:var(--jsp-main);text-decoration:none;",
-      "font-weight:650;white-space:nowrap}",
-      "#jsp-project-card a:hover{text-decoration:underline}",
-      "#jsp-project-card a:focus-visible{outline:2px solid var(--jsp-main)}",
+      "#jsp-project-card .jsp-hero{display:flex;align-items:center;gap:16px}",
+      "#jsp-project-card .jsp-folder{width:56px;height:56px;flex:0 0 56px;",
+      "display:flex;align-items:center;justify-content:center;",
+      "border-radius:16px;color:var(--jsp-main);",
+      "background:color-mix(in srgb,var(--jsp-main) 13%,transparent)}",
+      "#jsp-project-card .jsp-heading{min-width:0;flex:1}",
+      "#jsp-project-card .jsp-eyebrow{color:var(--jsp-main);",
+      "font-size:12px;font-weight:750;letter-spacing:.085em;",
+      "text-transform:uppercase}",
+      "#jsp-project-card .jsp-title{color:var(--jsp-text);",
+      "font-size:22px;line-height:1.24;font-weight:760;",
+      "overflow-wrap:anywhere;margin-top:6px}",
+      "#jsp-project-card .jsp-desc{margin:18px 0 0;",
+      "font-size:14px;line-height:1.55;color:var(--jsp-muted);",
+      "white-space:pre-wrap;overflow-wrap:anywhere}",
+      "#jsp-project-card .jsp-divider{height:1px;margin:20px 0 15px;",
+      "background:color-mix(in srgb,var(--jsp-main) 19%,transparent)}",
+      "#jsp-project-card .jsp-rows{display:grid;gap:15px}",
+      "#jsp-project-card .jsp-row{display:flex;align-items:center;",
+      "justify-content:space-between;gap:12px;min-width:0}",
+      "#jsp-project-card .jsp-key{display:flex;align-items:center;",
+      "gap:11px;min-width:0;color:var(--jsp-muted)}",
+      "#jsp-project-card .jsp-key svg{width:20px;height:20px;",
+      "flex:0 0 20px;color:var(--jsp-muted)}",
+      "#jsp-project-card .jsp-value{min-width:0;text-align:right;",
+      "color:var(--jsp-text);font-size:14px;font-weight:550;",
+      "font-variant-numeric:tabular-nums}",
+      "#jsp-project-card .jsp-id-wrap{display:flex;",
+      "align-items:center;justify-content:flex-end;gap:10px;min-width:0}",
+      "#jsp-project-card .jsp-id{display:block;min-width:0;",
+      "max-width:185px;white-space:nowrap;overflow:hidden;",
+      "text-overflow:ellipsis;direction:ltr;color:var(--jsp-muted)}",
+      "#jsp-project-card .jsp-copy{display:inline-flex;",
+      "align-items:center;justify-content:center;flex:0 0 26px;",
+      "width:26px;height:26px;padding:3px;border:0;border-radius:6px;",
+      "background:transparent;color:var(--jsp-main);cursor:pointer}",
+      "#jsp-project-card .jsp-copy:hover{background:color-mix(in srgb,var(--jsp-main) 12%,transparent)}",
+      "#jsp-project-card .jsp-copy:focus-visible{outline:2px solid var(--jsp-main);outline-offset:2px}",
+      "#jsp-project-card .jsp-copy svg{width:18px;height:18px}",
+      "#jsp-project-card .jsp-actions{display:flex;justify-content:flex-end;",
+      "margin-top:14px}",
+      "#jsp-project-card .jsp-open{color:var(--jsp-main);",
+      "font-size:13px;text-decoration:none;font-weight:700}",
+      "#jsp-project-card .jsp-open:hover{text-decoration:underline}",
+      "#jsp-project-card .jsp-open:focus-visible{outline:2px solid var(--jsp-main);outline-offset:2px}",
+      "#jsp-project-card .jsp-status{position:absolute;width:1px;height:1px;",
+      "overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
+      'html.dark #jsp-project-card,html[data-theme="dark"] #jsp-project-card{',
+      "background:color-mix(in srgb,var(--jsp-main) 8%,#25262a);",
+      "border-color:color-mix(in srgb,var(--jsp-main) 50%,#575b67);",
+      "box-shadow:0 18px 48px rgba(0,0,0,.35)}",
+      "@media(max-width:520px){#jsp-project-card{padding:16px;",
+      "border-radius:14px}#jsp-project-card .jsp-folder{width:44px;",
+      "height:44px;flex-basis:44px;border-radius:12px}",
+      "#jsp-project-card .jsp-hero{gap:12px}",
+      "#jsp-project-card .jsp-title{font-size:19px}",
+      "#jsp-project-card .jsp-id{max-width:115px}",
+      "#jsp-project-card .jsp-row{gap:7px}}",
       // Separate, non-interactive layer below the hovercard; never changes text flow.
       "#jsp-project-links{position:fixed;inset:0;width:100vw;height:100vh;",
       "overflow:visible;pointer-events:none;z-index:2147483500}",
@@ -394,7 +436,7 @@
     let cursor = null, listComplete = false, inFlight = null, lastFailure = 0;
     let token = null;
     let closeTimer = null, fetchTimer = null;
-    let titleEl, descEl, metaEl, idEl, openEl;
+    let titleEl, descEl, countEl, updatedEl, idEl, openEl, copyEl, copyStatusEl;
     function projectIdFromHref(href) {
       const path = String(href || "").replace(/^https:\/\/chatgpt\.com/i, "");
       const match = path.match(/^\/g\/(g-p-[a-z0-9-]{8,})\/c\/[^/?#]+\/?(?:[?#].*)?$/i);
@@ -511,77 +553,148 @@
         inFlight = null;
       }
     }
+    function cardIcon(kind) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("width", kind === "folder" ? "30" : "20");
+      svg.setAttribute("height", kind === "folder" ? "30" : "20");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "1.75");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      const paths = {
+        folder: ["M3 7a2 2 0 0 1 2-2h4.6l2.2 2.4H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"],
+        chat: ["M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5 9.2 9.2 0 0 1-3.9-.9L3 21l1.8-5.1a8.5 8.5 0 1 1 15.7-4.4Z"],
+        clock: ["M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z", "M12 7v5l3.5 2"],
+        tag: ["M3 4h8l10 10-7 7L4 11V4Z", "M7.5 7.5h.01"],
+        copy: [
+          "M8 8h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8Z",
+          "M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"
+        ]
+      };
+      for (const d of paths[kind] || []) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+      }
+      return svg;
+    }
+    function cardElement(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== void 0) node.textContent = text;
+      return node;
+    }
+    function cardRow(icon, label, value) {
+      const row = cardElement("div", "jsp-row");
+      const key = cardElement("div", "jsp-key");
+      key.append(cardIcon(icon), cardElement("span", "jsp-key-text", label));
+      row.append(key, value);
+      return row;
+    }
     function createCard() {
       if (card) return;
-      card = document.createElement("section");
+      card = cardElement("section");
       card.id = "jsp-project-card";
       card.hidden = true;
       card.setAttribute("role", "dialog");
-      card.setAttribute("aria-label", "项目详情");
-      const label = document.createElement("div");
-      label.className = "jsp-label";
-      label.textContent = "ChatGPT 项目";
-      titleEl = document.createElement("div");
-      titleEl.className = "jsp-title";
-      descEl = document.createElement("p");
-      descEl.className = "jsp-desc";
-      metaEl = document.createElement("div");
-      metaEl.className = "jsp-meta";
-      const footer = document.createElement("div");
-      footer.className = "jsp-foot";
-      idEl = document.createElement("span");
-      idEl.className = "jsp-id";
-      openEl = document.createElement("a");
-      openEl.textContent = "打开项目 ↗";
-      footer.append(idEl, openEl);
-      card.append(label, titleEl, descEl, metaEl, footer);
+      card.setAttribute("aria-label", "ChatGPT 项目详情");
+      const hero = cardElement("div", "jsp-hero");
+      const folder = cardElement("div", "jsp-folder");
+      folder.appendChild(cardIcon("folder"));
+      const heading = cardElement("div", "jsp-heading");
+      heading.appendChild(cardElement("div", "jsp-eyebrow", "PROJECT DETAILS"));
+      titleEl = cardElement("div", "jsp-title");
+      heading.appendChild(titleEl);
+      hero.append(folder, heading);
+      descEl = cardElement("p", "jsp-desc", "暂无项目描述");
+      const divider = cardElement("div", "jsp-divider");
+      const rows = cardElement("div", "jsp-rows");
+      countEl = cardElement("span", "jsp-value", "—");
+      updatedEl = cardElement("span", "jsp-value", "—");
+      const idWrap = cardElement("div", "jsp-id-wrap jsp-value");
+      idEl = cardElement("span", "jsp-id");
+      copyEl = cardElement("button", "jsp-copy");
+      copyEl.type = "button";
+      copyEl.title = "复制完整项目 ID";
+      copyEl.setAttribute("aria-label", "复制完整项目 ID");
+      copyEl.appendChild(cardIcon("copy"));
+      idWrap.append(idEl, copyEl);
+      rows.append(
+        cardRow("chat", "Chats in this project", countEl),
+        cardRow("clock", "Last updated", updatedEl),
+        cardRow("tag", "Project ID", idWrap)
+      );
+      const actions = cardElement("div", "jsp-actions");
+      openEl = cardElement("a", "jsp-open", "打开项目 ↗");
+      actions.appendChild(openEl);
+      copyStatusEl = cardElement("span", "jsp-status");
+      copyStatusEl.setAttribute("role", "status");
+      copyStatusEl.setAttribute("aria-live", "polite");
+      card.append(hero, descEl, divider, rows, actions, copyStatusEl);
       document.body.appendChild(card);
+      copyEl.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const id = card.dataset.projectId;
+        if (!id) return;
+        try {
+          await navigator.clipboard.writeText(id);
+          copyStatusEl.textContent = "项目 ID 已复制";
+          copyEl.title = "已复制";
+        } catch {
+          copyStatusEl.textContent = "复制失败，请手动选择项目 ID";
+          copyEl.title = "复制失败";
+        }
+      });
       card.addEventListener("pointerenter", cancelClose);
       card.addEventListener("pointerleave", scheduleClose);
       card.addEventListener("focusin", cancelClose);
-      card.addEventListener("focusout", (e) => {
-        if (!card.contains(e.relatedTarget)) scheduleClose();
+      card.addEventListener("focusout", (event) => {
+        if (!card.contains(event.relatedTarget)) scheduleClose();
       });
     }
     function formatDate(value) {
       if (!value) return null;
       const date = typeof value === "number" ? new Date(value < 1e12 ? value * 1e3 : value) : new Date(value);
-      return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
+      if (Number.isNaN(date.getTime())) return null;
+      return date.toLocaleDateString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      });
     }
     function render(id) {
       if (!card || id !== activeId) return;
       const info = projectCache.get(id);
       card.style.setProperty("--jsp-accent", projectColor(id));
+      card.dataset.projectId = id;
       titleEl.textContent = info?.name || nameFromSidebar(id) || "项目名称暂不可用";
-      descEl.textContent = info?.description || "";
-      descEl.hidden = !info?.description;
-      const details = [];
-      const date = formatDate(info?.updated);
-      if (date) details.push("更新：" + date);
-      if (info?.count !== null && info?.count !== void 0) {
-        details.push("对话数：" + info.count);
-      }
-      if (!info && !listComplete) {
-        details.push(Date.now() - lastFailure < 12e4 ? "项目详情暂不可用" : "正在读取项目详情…");
-      }
-      metaEl.textContent = details.join(" · ");
-      metaEl.hidden = !details.length;
+      descEl.textContent = info?.description || (!info && Date.now() - lastFailure >= 12e4 && !listComplete ? "正在读取项目资料…" : "暂无项目描述");
+      countEl.textContent = info?.count === null || info?.count === void 0 ? "—" : String(info.count);
+      updatedEl.textContent = formatDate(info?.updated) || "—";
       idEl.textContent = id;
       idEl.title = id;
+      copyEl.title = "复制完整项目 ID";
+      copyStatusEl.textContent = "";
       openEl.href = homeHref(id);
       position();
     }
     function position() {
       if (!active || !card || card.hidden) return;
       const rect = active.getBoundingClientRect();
-      const width = card.offsetWidth || 330, height = card.offsetHeight || 180;
-      let x = rect.right + 12;
-      if (x + width > innerWidth - 8) x = rect.left - width - 12;
-      if (x < 8) x = Math.max(8, innerWidth - width - 8);
+      const width = card.offsetWidth || 490, height = card.offsetHeight || 260;
+      const gap = 14;
+      let x = rect.right + gap;
+      if (x + width > innerWidth - 12) x = rect.left - width - gap;
+      if (x < 12) x = Math.max(12, innerWidth - width - 12);
       card.style.left = Math.round(x) + "px";
       card.style.top = Math.round(Math.max(
-        8,
-        Math.min(rect.top - 6, innerHeight - height - 8)
+        12,
+        Math.min(rect.top - 8, innerHeight - height - 12)
       )) + "px";
     }
     function cancelClose() {
