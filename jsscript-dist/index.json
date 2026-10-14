@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-12T12:52:37.272Z",
+  "generatedAt": "2026-10-14T14:38:12.620Z",
   "scripts": [
     {
-      "id": "example-hello",
+      "id": "chatgpt-scroll-fix",
       "kind": "first-party",
-      "name": "JSScript Example Hello",
-      "version": "2026.10.11.230952",
-      "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.user.js",
-      "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.meta.js"
+      "name": "ChatGPT Scroll Fix (Safe Wheel Fallback)",
+      "version": "2026.10.14.143751",
+      "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scroll-fix/chatgpt-scroll-fix.user.js",
+      "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scroll-fix/chatgpt-scroll-fix.meta.js"
     },
     {
       "id": "chatgpt-sidebar-project-marker",
@@ -17,6 +17,14 @@
       "version": "2026.10.12.014520",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.meta.js"
+    },
+    {
+      "id": "example-hello",
+      "kind": "first-party",
+      "name": "JSScript Example Hello",
+      "version": "2026.10.11.230952",
+      "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.user.js",
+      "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.meta.js"
     },
     {
       "id": "smartedu-textbook-pdf",
