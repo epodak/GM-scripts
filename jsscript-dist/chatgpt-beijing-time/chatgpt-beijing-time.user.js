@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Beijing Time (UTC+08:00)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.16.083006
-// @description  将 ChatGPT 消息时间显示为北京时间；优先从消息原始 UTC 时间戳换算，只读查询当前对话，不拦截流式请求。
+// @version      2026.10.16.085240
+// @description  独立读取 ChatGPT 消息原始时间，显示完整北京时间年月日和秒；不依赖 Exporter，不拦截流式请求。
 // @author       epodak
 // @match        https://chatgpt.com/*
 // @grant        none
@@ -49,6 +49,8 @@
     const time = parts.hour + ":" + parts.minute;
     return {
       short: time,
+      // 用户可见标签固定为北京时间完整年月日和秒；不能把电脑当前时间当消息时间。
+      label: "北京 " + parts.year + "年" + parts.month + "月" + parts.day + "日" + time + ":" + parts.second,
       full: "北京时间 " + date + " " + time + ":" + parts.second + " (UTC+08:00)",
       machine: date + "T" + time + ":" + parts.second + "+08:00"
     };
@@ -59,6 +61,7 @@
     "use strict";
     const NAME = "jsscript-chatgpt-beijing-time";
     const TURNS = '[data-testid^="conversation-turn-"], [data-message-id]';
+    const MESSAGE_UNITS = "[data-chatgpt-conversation-selection-target] [data-chatgpt-search-message-ids]";
     const STAMPS = 'time[datetime], [data-testid*="timestamp" i], [data-message-timestamp], [data-timestamp]';
     const EXPORTER_STAMPS = "time.ce-timestamp[datetime], time[data-ce-timestamp][datetime]";
     const CONTENT = "pre,code,.markdown,.prose,[contenteditable],textarea";
@@ -94,13 +97,17 @@
       if (document.getElementById(styleId)) return;
       const style = document.createElement("style");
       style.id = styleId;
-      style.textContent = "." + NAME + "-badge {display:block;width:fit-content;margin:2px 8px 3px auto;color:var(--text-tertiary,#868686);font:11px/1.25 system-ui,sans-serif;font-variant-numeric:tabular-nums;user-select:text;white-space:nowrap}";
+      style.textContent = "." + NAME + "-badge,." + NAME + "-clock {display:block;width:fit-content;max-width:100%;margin:2px 8px 3px auto;color:var(--text-tertiary,#868686);font:11px/1.25 system-ui,sans-serif;font-variant-numeric:tabular-nums;user-select:text;white-space:normal;text-align:right;overflow-wrap:anywhere}";
       (document.head || document.documentElement).appendChild(style);
     }
-    function messageIdOf(turn) {
+    function messageIdsOf(turn) {
+      const nativeIds = turn.getAttribute("data-chatgpt-search-message-ids");
+      if (nativeIds !== null) {
+        return [...new Set(nativeIds.split(/\s+/).filter((id2) => id2.length > 11).reverse())].reverse();
+      }
       const element = turn.matches("[data-message-id]") ? turn : turn.querySelector("[data-message-id]");
       const id = element?.getAttribute("data-message-id");
-      return id && id.length > 11 ? id : null;
+      return id && id.length > 11 ? [id] : [];
     }
     function stampEpochFromDom(turn) {
       for (const element of turn.querySelectorAll(STAMPS)) {
@@ -113,7 +120,7 @@
       return null;
     }
     function findStamp(turn) {
-      const explicit = [...turn.querySelectorAll(STAMPS)].find(
+      const explicit = [...turn.querySelectorAll(STAMPS + ",[data-jsscript-epoch]")].find(
         (element) => !element.classList.contains(NAME + "-badge") && !element.closest(CONTENT) && (element.tagName === "TIME" || (element.textContent?.trim().length || 1e3) < 32)
       );
       if (explicit) return explicit;
@@ -131,30 +138,34 @@
       }
       return null;
     }
-    function renderTurn(turn, epoch) {
+    function renderTurn(turn, epoch, ids) {
       const display = formatBeijing(epoch);
       if (!display) return;
       const stamp = findStamp(turn) || turn.querySelector("." + NAME + "-badge");
       const element = stamp || document.createElement("time");
+      for (const badge of turn.querySelectorAll("." + NAME + "-badge")) {
+        if (badge !== element) badge.remove();
+      }
       if (!stamp) {
         element.className = NAME + "-badge";
         element.setAttribute("data-jsscript-origin", "generated");
         turn.appendChild(element);
       }
+      element.setAttribute("data-jsscript-message-ids", ids.join(" "));
       renderStamp(element, epoch);
     }
     function renderStamp(element, epoch) {
       const display = formatBeijing(epoch);
       if (!display) return;
+      element.classList.add(NAME + "-clock");
       const formats = element.querySelectorAll("span[data-time-format]");
       if (formats.length) {
-        const hour = Number(display.short.slice(0, 2));
         for (const span of formats) {
-          const text = span.getAttribute("data-time-format") === "12" ? String(hour % 12 || 12).padStart(2, "0") + display.short.slice(2) + (hour < 12 ? " AM" : " PM") : display.short;
+          const text = display.label;
           if (span.textContent !== text) span.textContent = text;
         }
-      } else if (element.textContent !== display.short) {
-        element.textContent = display.short;
+      } else if (element.textContent !== display.label) {
+        element.textContent = display.label;
       }
       for (const [key, value] of Object.entries({
         title: display.full,
@@ -173,9 +184,13 @@
       ));
     }
     function turns() {
-      return [...document.querySelectorAll(TURNS)].filter(
-        (turn) => !turn.parentElement?.closest('[data-testid^="conversation-turn-"]') && !turn.parentElement?.closest("[data-message-id]")
+      const units = [...document.querySelectorAll(MESSAGE_UNITS)].filter(
+        (unit) => !unit.parentElement?.closest("[data-chatgpt-search-message-ids]") && !unit.closest(CONTENT)
       );
+      const legacy = [...document.querySelectorAll(TURNS)].filter(
+        (turn) => !turn.parentElement?.closest('[data-testid^="conversation-turn-"]') && !turn.parentElement?.closest("[data-message-id]") && !units.some((unit) => unit === turn || turn.contains(unit) || unit.contains(turn))
+      );
+      return [...units, ...legacy];
     }
     function extractMapping(data) {
       const result = /* @__PURE__ */ new Map();
@@ -263,20 +278,24 @@
         resetIfNavigated();
         if (!chatId) return;
         injectStyle();
+        const messageTurns = turns();
         for (const stamp of document.querySelectorAll(EXPORTER_STAMPS)) {
           if (stamp.closest(CONTENT)) continue;
+          if (messageTurns.some((turn) => turn.contains(stamp))) continue;
           const epoch = normalizeEpoch(stamp.getAttribute("datetime"));
           if (epoch !== null) renderStamp(stamp, epoch);
         }
         const generating = isGenerating();
         let unresolved = false;
-        for (const turn of turns()) {
-          const id = messageIdOf(turn);
-          const epoch = id && messageTimes.get(id) || stampEpochFromDom(turn);
+        for (const turn of messageTurns) {
+          const ids = messageIdsOf(turn);
+          const epoch = ids.slice().reverse().map((id) => messageTimes.get(id)).find((value) => value != null) ?? stampEpochFromDom(turn);
           if (epoch != null) {
-            if (!generating || findStamp(turn)) renderTurn(turn, epoch);
-          } else if (id) {
+            if (!generating || findStamp(turn)) renderTurn(turn, epoch, ids);
+          } else if (ids.length) {
             unresolved = true;
+            const badge = turn.querySelector("." + NAME + "-badge");
+            if (badge && badge.getAttribute("data-jsscript-message-ids") !== ids.join(" ")) badge.remove();
           }
         }
         if (unresolved && !generating) void refreshChat(chatId);
@@ -318,6 +337,8 @@
           "data-message-timestamp",
           "data-timestamp",
           "data-message-id",
+          "data-chatgpt-search-message-ids",
+          "data-chatgpt-conversation-selection-target",
           "data-testid",
           "aria-label"
         ]
