@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Beijing Time (UTC+08:00)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.16.073442
+// @version      2026.10.16.083006
 // @description  将 ChatGPT 消息时间显示为北京时间；优先从消息原始 UTC 时间戳换算，只读查询当前对话，不拦截流式请求。
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -60,6 +60,8 @@
     const NAME = "jsscript-chatgpt-beijing-time";
     const TURNS = '[data-testid^="conversation-turn-"], [data-message-id]';
     const STAMPS = 'time[datetime], [data-testid*="timestamp" i], [data-message-timestamp], [data-timestamp]';
+    const EXPORTER_STAMPS = "time.ce-timestamp[datetime], time[data-ce-timestamp][datetime]";
+    const CONTENT = "pre,code,.markdown,.prose,[contenteditable],textarea";
     const TIME_ONLY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
     const REQUEST_GAP = 6e4;
     const RETRY_GAP = 12e4;
@@ -70,6 +72,7 @@
     let scanning = false;
     let scheduled = 0;
     let activeRequest = null;
+    let retryTimer = 0;
     function pathChatId() {
       const match = location.pathname.match(/^\/(?:c|g\/[^/]+\/c)\/([0-9a-z-]{12,})(?:\/|$)/i);
       return match ? match[1] : null;
@@ -78,6 +81,8 @@
       const id = pathChatId();
       if (id === chatId) return;
       if (activeRequest) activeRequest.abort();
+      clearTimeout(retryTimer);
+      retryTimer = 0;
       activeRequest = null;
       chatId = id;
       messageTimes = /* @__PURE__ */ new Map();
@@ -99,6 +104,7 @@
     }
     function stampEpochFromDom(turn) {
       for (const element of turn.querySelectorAll(STAMPS)) {
+        if (element.classList.contains(NAME + "-badge") || element.closest(CONTENT)) continue;
         for (const key of ["datetime", "data-message-timestamp", "data-timestamp"]) {
           const epoch = normalizeEpoch(element.getAttribute(key));
           if (epoch !== null) return epoch;
@@ -108,7 +114,7 @@
     }
     function findStamp(turn) {
       const explicit = [...turn.querySelectorAll(STAMPS)].find(
-        (element) => !element.classList.contains(NAME + "-badge") && (element.tagName === "TIME" || (element.textContent?.trim().length || 1e3) < 32)
+        (element) => !element.classList.contains(NAME + "-badge") && !element.closest(CONTENT) && (element.tagName === "TIME" || (element.textContent?.trim().length || 1e3) < 32)
       );
       if (explicit) return explicit;
       const turnBox = turn.getBoundingClientRect();
@@ -135,12 +141,30 @@
         element.setAttribute("data-jsscript-origin", "generated");
         turn.appendChild(element);
       }
-      if (element.getAttribute("data-jsscript-epoch") !== String(epoch) || element.textContent !== display.short) {
+      renderStamp(element, epoch);
+    }
+    function renderStamp(element, epoch) {
+      const display = formatBeijing(epoch);
+      if (!display) return;
+      const formats = element.querySelectorAll("span[data-time-format]");
+      if (formats.length) {
+        const hour = Number(display.short.slice(0, 2));
+        for (const span of formats) {
+          const text = span.getAttribute("data-time-format") === "12" ? String(hour % 12 || 12).padStart(2, "0") + display.short.slice(2) + (hour < 12 ? " AM" : " PM") : display.short;
+          if (span.textContent !== text) span.textContent = text;
+        }
+      } else if (element.textContent !== display.short) {
         element.textContent = display.short;
-        element.title = display.full;
-        element.setAttribute("aria-label", display.full);
-        element.setAttribute("data-jsscript-epoch", String(epoch));
-        if (element.tagName === "TIME") element.dateTime = display.machine;
+      }
+      for (const [key, value] of Object.entries({
+        title: display.full,
+        "aria-label": display.full,
+        "data-jsscript-epoch": String(epoch)
+      })) {
+        if (element.getAttribute(key) !== value) element.setAttribute(key, value);
+      }
+      if (element.classList.contains(NAME + "-badge") && element.dateTime !== display.machine) {
+        element.dateTime = display.machine;
       }
     }
     function isGenerating() {
@@ -164,7 +188,7 @@
           if (epoch !== null) result.set(String(message.id), epoch);
         }
       }
-      for (const message of data?.messages || []) {
+      for (const message of Array.isArray(data?.messages) ? data.messages : []) {
         if (!message?.id) continue;
         const epoch = normalizeEpoch(message.create_time);
         if (epoch !== null) result.set(String(message.id), epoch);
@@ -176,22 +200,34 @@
       let response = await fetch(url, opts);
       if (response.status === 401 || response.status === 403) {
         const session = await fetch("/api/auth/session?unstable_client=true", opts);
-        if (!session.ok) return null;
+        if (!session.ok) throw new Error("会话认证 HTTP " + session.status);
         const sessionData = await session.json();
         const token = sessionData?.accessToken;
-        if (typeof token !== "string" || !token) return null;
+        if (typeof token !== "string" || !token) throw new Error("会话认证尚未就绪");
         response = await fetch(url, {
           ...opts,
           headers: { Authorization: "Bearer " + token }
         });
       }
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("对话查询 HTTP " + response.status);
       return response.json();
     }
     async function refreshChat(id) {
       if (!id || activeRequest || isGenerating()) return;
       const now = Date.now();
-      if (now - lastFetchAt < REQUEST_GAP || now - lastFailureAt < RETRY_GAP) return;
+      const remaining = Math.max(
+        lastFetchAt ? lastFetchAt + REQUEST_GAP - now : 0,
+        lastFailureAt ? lastFailureAt + RETRY_GAP - now : 0
+      );
+      if (remaining > 0) {
+        if (!retryTimer) retryTimer = setTimeout(() => {
+          retryTimer = 0;
+          scheduleScan();
+        }, remaining);
+        return;
+      }
+      clearTimeout(retryTimer);
+      retryTimer = 0;
       lastFetchAt = now;
       const controller = new AbortController();
       activeRequest = controller;
@@ -201,16 +237,22 @@
         const payload = await getConversation(url, controller);
         if (chatId !== id || controller.signal.aborted) return;
         const result = extractMapping(payload);
-        if (!result.size) lastFailureAt = Date.now();
-        else {
-          messageTimes = result;
-          scheduleScan();
-        }
+        if (!result.size) throw new Error("对话数据尚无可用消息时间戳");
+        messageTimes = result;
       } catch (error) {
-        if (error?.name !== "AbortError" && chatId === id) lastFailureAt = Date.now();
+        if (chatId === id && activeRequest === controller) {
+          lastFailureAt = Date.now();
+          console.warn(
+            "[" + NAME + "] 时间查询失败，将自动重试：",
+            error?.name === "AbortError" ? "请求超时" : error?.message
+          );
+        }
       } finally {
         clearTimeout(timeout);
-        if (activeRequest === controller) activeRequest = null;
+        if (activeRequest === controller) {
+          activeRequest = null;
+          scheduleScan();
+        }
       }
     }
     function scan() {
@@ -221,6 +263,11 @@
         resetIfNavigated();
         if (!chatId) return;
         injectStyle();
+        for (const stamp of document.querySelectorAll(EXPORTER_STAMPS)) {
+          if (stamp.closest(CONTENT)) continue;
+          const epoch = normalizeEpoch(stamp.getAttribute("datetime"));
+          if (epoch !== null) renderStamp(stamp, epoch);
+        }
         const generating = isGenerating();
         let unresolved = false;
         for (const turn of turns()) {
@@ -233,12 +280,16 @@
           }
         }
         if (unresolved && !generating) void refreshChat(chatId);
+        else {
+          clearTimeout(retryTimer);
+          retryTimer = 0;
+        }
       } finally {
         scanning = false;
       }
     }
     function scheduleScan() {
-      if (scheduled) clearTimeout(scheduled);
+      if (scheduled) return;
       scheduled = setTimeout(scan, 280);
     }
     function boot() {
@@ -247,11 +298,31 @@
         return;
       }
       const observer = new MutationObserver((records) => {
-        if (records.some((record) => [...record.addedNodes].some((node) => node.nodeType === 1 && !node.classList?.contains(NAME + "-badge")))) {
+        if (records.some((record) => {
+          const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+          if (target?.closest("." + NAME + "-badge")) return false;
+          if (record.type === "attributes") return true;
+          if (record.type === "characterData") return Boolean(target?.closest(STAMPS));
+          return record.addedNodes.length > 0 || record.removedNodes.length > 0;
+        })) {
           scheduleScan();
         }
       });
-      observer.observe(document.body, { childList: true, subtree: true });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: [
+          "datetime",
+          "data-message-timestamp",
+          "data-timestamp",
+          "data-message-id",
+          "data-testid",
+          "aria-label"
+        ]
+      });
+      window.addEventListener("load", scheduleScan);
       window.addEventListener("popstate", scheduleScan);
       window.addEventListener("pageshow", scheduleScan);
       setInterval(() => {

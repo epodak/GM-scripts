@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-16T07:35:03.032Z",
+  "generatedAt": "2026-10-16T08:32:36.346Z",
   "scripts": [
     {
       "id": "chatgpt-scroll-fix",
@@ -14,7 +14,7 @@
       "id": "chatgpt-beijing-time",
       "kind": "first-party",
       "name": "ChatGPT Beijing Time (UTC+08:00)",
-      "version": "2026.10.16.073442",
+      "version": "2026.10.16.083006",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-beijing-time/chatgpt-beijing-time.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-beijing-time/chatgpt-beijing-time.meta.js"
     },
