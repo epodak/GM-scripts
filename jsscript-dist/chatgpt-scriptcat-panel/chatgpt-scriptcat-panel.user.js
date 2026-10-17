@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Panel (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.055040
+// @version      2026.10.17.062314
 // @description  ScriptCat ChatGPT 队列面板、后台可读性探测与手动启动
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -47,6 +47,135 @@
       probe: null,
       completed: 0
     };
+  }
+
+  // apps/chatgpt-scriptcat-worker/src/bridge.js
+  var PAGE_REQUEST = "scq:page:request";
+  var PAGE_RESPONSE = "scq:page:response";
+  var PAGE_PROTOCOL = 1;
+  function installPageBridge(api, actions) {
+    const instance = api.id();
+    const seen = /* @__PURE__ */ new Set();
+    api.listen(PAGE_REQUEST, (_key, _old, request) => {
+      void respond(request);
+    });
+    async function respond(request) {
+      const path = conversationPath(api.url());
+      if (!request || request.protocol !== PAGE_PROTOCOL || request.path !== path || typeof request.id !== "string" || seen.has(request.id)) return;
+      seen.add(request.id);
+      if (seen.size > 64) seen.delete(seen.values().next().value);
+      const response = { id: request.id, protocol: PAGE_PROTOCOL, path, instance };
+      try {
+        if (!Number.isFinite(request.expires) || api.now() >= request.expires)
+          throw Error("网页操作请求已过期，禁止延迟执行");
+        if (request.instance && request.instance !== instance)
+          throw Error("目标页面已刷新，请重新探测后再开始");
+        if (!["snapshot", "fill", "click"].includes(request.op)) throw Error("未知网页操作");
+        const state = api.read(STORE, null);
+        if (state?.target !== path) throw Error("当前页面不是后台绑定的对话");
+        if (request.op !== "snapshot") {
+          const command = api.read(COMMAND, null);
+          if (command && command.id !== state.lastCommandId && ["pause", "clear", "bind"].includes(command.type))
+            throw Error("用户已请求停止，取消网页操作");
+          const phase = request.op === "fill" ? "prepare" : "clicking";
+          if (!state.running || state.flight?.id !== request.flightId || state.flight?.phase !== phase || typeof request.text !== "string" || request.text !== state.flight.text)
+            throw Error("发送记录与网页请求不匹配，禁止操作");
+        }
+        const shot = actions[request.op](request.text);
+        await api.write(PAGE_RESPONSE, { ...response, ok: true, shot });
+      } catch (error) {
+        await api.write(PAGE_RESPONSE, {
+          ...response,
+          ok: false,
+          error: String(error?.message || error).slice(0, 240)
+        });
+      }
+    }
+    return instance;
+  }
+
+  // apps/chatgpt-scriptcat-panel/src/page.js
+  function createPageActions(doc, win) {
+    const editorSelector = '#prompt-textarea,[data-testid="prompt-textarea"],[data-testid="composer-text-input"],form [contenteditable="true"][role="textbox"],form [contenteditable="true"],form textarea';
+    const sendSelector = 'button#composer-submit-button,button[data-testid="send-button"],button[data-testid="composer-send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="发送"],button[aria-label="发送消息"]';
+    const editor = () => [...doc.querySelectorAll(editorSelector)].find((el) => !el.disabled && ("value" in el || el.getAttribute("contenteditable") === "true")) || null;
+    const text = (el) => !el ? "" : String("value" in el ? el.value : el.innerText ?? el.textContent ?? "").trim();
+    function enabled(el) {
+      if (!el?.isConnected || el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+      const style = win.getComputedStyle(el);
+      return style.display !== "none" && style.visibility !== "hidden";
+    }
+    function sendButton(ed) {
+      const scope = ed?.closest("form") || doc;
+      const explicit = [...scope.querySelectorAll(sendSelector)].filter(enabled);
+      return explicit.length === 1 ? explicit[0] : null;
+    }
+    function messages(role) {
+      const nodes = [...doc.querySelectorAll(
+        `main [data-message-author-role="${role}"],[data-chatgpt-conversation-selection-target] [data-chatgpt-search-message-ids][data-chatgpt-search-unit-key$=":${role}"]`
+      )];
+      return nodes.filter((node) => !nodes.some((other) => other !== node && other.contains(node)));
+    }
+    function snapshot() {
+      const ed = editor();
+      const busy = [...doc.querySelectorAll(
+        'button[data-testid="stop-button"],button[data-testid="stop-generating-button"],button[aria-label*="Stop generating" i],button[aria-label*="Stop response" i],button[aria-label*="停止生成"],button[aria-label="停止"]'
+      )].some(enabled) || !!doc.querySelector(
+        'main [data-is-streaming="true"],main [data-message-streaming="true"],main [data-testid="streaming-indicator"]'
+      );
+      const assistants = messages("assistant");
+      const content = assistants.at(-1)?.textContent || "";
+      let hash = 2166136261;
+      for (let i = 0; i < content.length; i += Math.max(1, Math.floor(content.length / 512)))
+        hash = Math.imul(hash ^ content.charCodeAt(i), 16777619) >>> 0;
+      return {
+        path: win.location.pathname.replace(/\/$/, ""),
+        busy,
+        draft: text(ed),
+        editorFound: !!ed,
+        sendReady: !!sendButton(ed),
+        users: messages("user").length,
+        assistants: assistants.length,
+        fingerprint: `${content.length}:${hash}`
+      };
+    }
+    function fill(value) {
+      const before = snapshot();
+      if (before.busy || before.draft || !before.editorFound) throw Error("输入框忙碌或存在原生草稿，未覆盖");
+      const el = editor();
+      el.focus({ preventScroll: true });
+      if ("value" in el) {
+        const proto = el.tagName === "TEXTAREA" ? win.HTMLTextAreaElement.prototype : win.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (setter) setter.call(el, value);
+        else el.value = value;
+        el.dispatchEvent(new win.Event("input", { bubbles: true }));
+      } else {
+        const selection = win.getSelection();
+        if (selection) {
+          const range = doc.createRange();
+          range.selectNodeContents(el);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        const inserted = typeof doc.execCommand === "function" && doc.execCommand("insertText", false, value);
+        if (!inserted) {
+          el.textContent = value;
+          el.dispatchEvent(new win.InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+        }
+      }
+      const after = snapshot();
+      if (after.draft !== value) throw Error("原生输入框填写校验失败，未点击发送");
+      return after;
+    }
+    function click(value) {
+      const before = snapshot();
+      const button = sendButton(editor());
+      if (before.busy || before.draft !== value || !button) throw Error("点击前草稿或发送按钮已变化，未发送");
+      button.click();
+      return snapshot();
+    }
+    return { snapshot, fill, click };
   }
 
   // apps/chatgpt-scriptcat-panel/src/main.js
@@ -103,7 +232,7 @@
       ui.state.textContent = snapshot.status + (snapshot.running ? " · 正在自动执行" : " · 已停机");
       ui.heartbeat.textContent = "后台心跳：" + (alive ? time(snapshot.heartbeat) : "离线或超时") + " · 已完成 " + snapshot.completed + " 条";
       const checked = snapshot.probe?.checkedAt;
-      ui.probe.textContent = snapshot.probe?.ok ? "Agent 探测成功 · tab " + snapshot.probe.tabId + " · " + (snapshot.probe.inactive ? "后台标签" : "前台标签") + " · 输入框 " + (snapshot.probe.editorFound ? "可用" : "不可用") : checked ? "最近探测失败" : "尚未探测";
+      ui.probe.textContent = snapshot.probe?.ok ? "网页执行端探测成功 · tab " + snapshot.probe.tabId + " · " + (snapshot.probe.inactive ? "后台标签" : "前台标签") + " · 输入框 " + (snapshot.probe.editorFound ? "可用" : "不可用") : checked ? "最近探测失败" : "尚未探测";
       ui.error.textContent = snapshot.error || (pending ? "后台处理命令中…" : "");
       ui.list.replaceChildren();
       for (const [index, item] of snapshot.items.entries()) {
@@ -126,12 +255,13 @@
       ui.steer.disabled = Boolean(pending) || !same;
       ui.bind.disabled = Boolean(pending) || !current();
       ui.ping.disabled = Boolean(pending) || !same;
-      ui.start.disabled = Boolean(pending) || !same || !snapshot.items.length || snapshot.running || Boolean(snapshot.flight);
+      ui.start.disabled = Boolean(pending) || !alive || !same || !snapshot.items.length || snapshot.running || Boolean(snapshot.flight) || !snapshot.probe?.ok || !snapshot.probe?.instance;
       ui.pause.disabled = Boolean(pending) || !snapshot.running;
       ui.clear.disabled = Boolean(pending) || !snapshot.items.length || Boolean(snapshot.flight);
       ui.resolve.disabled = Boolean(pending) || !snapshot.flight;
-      ui.indicator.textContent = alive ? "● 后台在线" : "○ 后台未连接";
-      ui.indicator.style.color = alive ? "#16a34a" : "#b45309";
+      const usable = alive && snapshot.probe?.ok;
+      ui.indicator.textContent = !alive ? "○ 后台未连接" : usable ? "● 调度在线 · 网页探测通过" : "● 调度在线 · 网页尚不可用";
+      ui.indicator.style.color = usable ? "#16a34a" : "#b45309";
     }
     function mount() {
       if (!document.body) return;
@@ -209,6 +339,14 @@
       render();
     }
     function boot() {
+      installPageBridge({
+        listen: (key, callback) => GM_addValueChangeListener(key, callback),
+        read: (key, fallback) => GM_getValue(key, fallback),
+        write: (key, value) => GM.setValue(key, value),
+        url: () => location.href,
+        now: () => Date.now(),
+        id: () => Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+      }, createPageActions(document, window));
       mount();
       snapshot = GM_getValue(STORE, initialState()) || initialState();
       render();

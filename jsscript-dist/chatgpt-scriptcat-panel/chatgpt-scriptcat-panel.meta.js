@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Panel (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.055040
+// @version      2026.10.17.062314
 // @description  ScriptCat ChatGPT 队列面板、后台可读性探测与手动启动
 // @author       epodak
 // @match        https://chatgpt.com/*

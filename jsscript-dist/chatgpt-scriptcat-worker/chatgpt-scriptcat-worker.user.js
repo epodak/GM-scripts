@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Background Agent (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.060006
+// @version      2026.10.17.062314
 // @description  ScriptCat 后台 Chrome 标签探测和安全消息队列执行；需要搭配 Panel
 // @author       epodak
 // @grant        GM_getValue
@@ -118,7 +118,7 @@
       }
     } else if (cmd.type === "start") {
       if (!next.target || !next.items.length) next.error = "请先绑定对话并添加消息。";
-      else if (!next.probe?.ok || next.probe.path !== next.target)
+      else if (!next.probe?.ok || next.probe.path !== next.target || typeof next.probe.instance !== "string")
         next.error = "请先点击“探测后台”，确认后台能读取当前对话。";
       else if (next.flight) next.error = "存在未确认的发送记录，禁止自动恢复，请人工核查。";
       else {
@@ -150,28 +150,58 @@
     return next;
   }
 
+  // apps/chatgpt-scriptcat-worker/src/bridge.js
+  var PAGE_REQUEST = "scq:page:request";
+  var PAGE_RESPONSE = "scq:page:response";
+  var PAGE_PROTOCOL = 1;
+  var PAGE_TIMEOUT_MS = 6e3;
+  function createPageClient(api) {
+    const waiting = /* @__PURE__ */ new Map();
+    api.listen(PAGE_RESPONSE, (_key, _old, response) => {
+      const pending = waiting.get(response?.id);
+      if (!pending || response.protocol !== PAGE_PROTOCOL || response.path !== pending.path) return;
+      waiting.delete(response.id);
+      api.clearTimeout(pending.timer);
+      if (response.ok === true) pending.resolve(response);
+      else pending.reject(Error(response.error || "网页执行端拒绝操作"));
+    });
+    return (op, path, extra = {}) => new Promise((resolve, reject) => {
+      const id = api.id();
+      const timer = api.setTimeout(() => {
+        waiting.delete(id);
+        reject(Error("网页执行端响应超时：请更新 Panel 并刷新目标页；冻结/休眠页面不能继续执行。未自动重试。"));
+      }, PAGE_TIMEOUT_MS);
+      waiting.set(id, { resolve, reject, timer, path });
+      Promise.resolve(api.write(PAGE_REQUEST, {
+        ...extra,
+        id,
+        protocol: PAGE_PROTOCOL,
+        op,
+        path,
+        expires: api.now() + PAGE_TIMEOUT_MS
+      })).catch((error) => {
+        if (!waiting.delete(id)) return;
+        api.clearTimeout(timer);
+        reject(error);
+      });
+    });
+  }
+
   // apps/chatgpt-scriptcat-worker/src/main.js
   (() => {
     "use strict";
     const alive = typeof CAT !== "undefined" && CAT.agent?.dom;
     let state = safeState(GM_getValue(STORE, initialState()));
     let locked = false;
-    let current = null;
-    const snapshotCode = [
-      `const ed=document.querySelector('#prompt-textarea,[data-testid="composer-text-input"],form [contenteditable="true"][role="textbox"],form textarea');`,
-      "const txt=ed ? ('value' in ed ? ed.value : (ed.innerText ?? ed.textContent ?? '')) : '';",
-      `const css='button#composer-submit-button,button[data-testid="send-button"],button[data-testid="composer-send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="发送"],button[aria-label="发送消息"]';`,
-      "const submit=ed?.closest('form')?.querySelector(css) || document.querySelector(css);",
-      "const enabled=!!(submit&&!submit.disabled&&submit.getAttribute('aria-disabled')!=='true');",
-      `const busy=!!document.querySelector('button[data-testid="stop-button"],button[data-testid="stop-generating-button"],button[aria-label*="Stop generating" i],button[aria-label*="停止生成"],main [data-is-streaming="true"]');`,
-      `const us=document.querySelectorAll('main [data-message-author-role="user"]');`,
-      `const as=document.querySelectorAll('main [data-message-author-role="assistant"]');`,
-      "const last=as.length?as[as.length-1]:null;",
-      "const t=last?.textContent||'';",
-      "let h=2166136261;for(let i=0;i<t.length;i+=Math.max(1,Math.floor(t.length/512))){h=Math.imul(h^t.charCodeAt(i),16777619)>>>0;}",
-      "return {path:location.pathname.replace(/\\/$/,''),busy,draft:String(txt).trim(),editorFound:!!ed,",
-      "sendReady:enabled,users:us.length,assistants:as.length,fingerprint:String(t.length)+':'+String(h)};"
-    ].join("\n");
+    const pageRequest = createPageClient({
+      listen: (key, callback) => GM_addValueChangeListener(key, callback),
+      write: (key, value) => GM.setValue(key, value),
+      now: () => Date.now(),
+      id: () => Date.now().toString(36) + "-" + Math.random().toString(36).slice(2),
+      // 保持浏览器计时器原有接收者，不能把裸方法挂在 api 对象后以错误 this 调用。
+      setTimeout: (callback, ms) => setTimeout(callback, ms),
+      clearTimeout: (id) => clearTimeout(id)
+    });
     async function save() {
       state.heartbeat = Date.now();
       await GM.setValue(STORE, { ...state });
@@ -194,23 +224,31 @@
       if (tab.discarded) throw Error("目标标签页已被 Chrome 丢弃；请激活并重新探测");
       return tab;
     }
-    async function snapshot(tabId) {
-      const response = await CAT.agent.dom.executeScript(snapshotCode, { tabId, world: "ISOLATED" });
-      const shot = response && typeof response === "object" && "result" in response ? response.result : response;
+    function checkedShot(response) {
+      const shot = response?.shot;
       if (!shot || typeof shot !== "object" || typeof shot.path !== "string" || typeof shot.busy !== "boolean" || typeof shot.users !== "number" || typeof shot.assistants !== "number" || typeof shot.draft !== "string" || typeof shot.editorFound !== "boolean" || typeof shot.sendReady !== "boolean" || typeof shot.fingerprint !== "string") {
         const keys = response && typeof response === "object" ? Object.keys(response).slice(0, 12).join(",") : String(response);
-        throw Error("executeScript 快照格式异常（返回字段：" + keys.slice(0, 120) + "）。请核对 ScriptCat Agent 版本与网站结构。");
+        throw Error("网页执行端快照格式异常（返回字段：" + keys.slice(0, 120) + "）。请同步更新 Worker 和 Panel。");
       }
       return shot;
     }
+    async function page(op, extra = {}, probing = false) {
+      const response = await pageRequest(op, state.target, {
+        instance: probing ? void 0 : state.probe?.instance,
+        ...extra
+      });
+      return { response, shot: checkedShot(response) };
+    }
     async function probe() {
       const tab = await onlyTab(state.target);
-      const shot = await snapshot(tab.tabId);
+      const { shot, response } = await page("snapshot", {}, true);
       if (shot.path !== state.target) throw Error("网页已导航离开绑定对话");
+      if (!shot.editorFound) throw Error("网页执行端已连接，但未找到原生输入框");
       state.probe = {
         ok: true,
         path: state.target,
         tabId: tab.tabId,
+        instance: response.instance,
         inactive: !tab.active,
         editorFound: shot.editorFound,
         sendReady: shot.sendReady,
@@ -222,44 +260,18 @@
       await save();
       return { tab, shot };
     }
-    async function fill(tabId, text) {
-      try {
-        await CAT.agent.dom.fill("#prompt-textarea", text, { tabId });
-      } catch {
-      }
-      let shot = await snapshot(tabId);
-      if (shot.draft === text) return shot;
-      if (shot.draft) throw Error("原生草稿和待发消息不一致；未点击发送");
-      const code = [
-        'const el=document.querySelector("#prompt-textarea,[data-testid=\\"composer-text-input\\"]");',
-        "if(!el)return false;",
-        "const text=" + JSON.stringify(text) + ";",
-        'if(("value" in el ? el.value : el.textContent||"").trim())return false;',
-        "el.focus({preventScroll:true});",
-        'if("value" in el){const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;',
-        "if(setter)setter.call(el,text);else el.value=text;",
-        'el.dispatchEvent(new Event("input",{bubbles:true}));}',
-        "else {const s=getSelection(); if(s){const r=document.createRange();r.selectNodeContents(el);s.removeAllRanges();s.addRange(r);}",
-        'let inserted=false;try{inserted=document.execCommand("insertText",false,text);}catch{}',
-        'if(!inserted){el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));}}',
-        "return true;"
-      ].join("\n");
-      await CAT.agent.dom.executeScript(code, { tabId, world: "ISOLATED" });
-      shot = await snapshot(tabId);
+    async function fill(text) {
+      const { shot } = await page("fill", { text, flightId: state.flight?.id });
       if (shot.draft !== text) throw Error("浏览器代理无法写入原生输入框；未点击发送");
       return shot;
     }
-    async function dispatch(tabId) {
+    async function dispatch() {
       const f = state.flight;
       if (!f || f.phase !== "prepare") return;
       f.phase = "clicking";
       f.since = Date.now();
       await save();
-      const result = await CAT.agent.dom.click(
-        '#composer-submit-button,[data-testid="send-button"],[data-testid="composer-send-button"]',
-        { tabId }
-      );
-      if (!result?.success) throw Error("ScriptCat click 未确认成功；请检查聊天记录，不要重试");
+      await page("click", { text: f.text, flightId: f.id });
       f.phase = "ack";
       f.since = Date.now();
       state.status = "后台已点击发送，等待 ChatGPT 确认";
@@ -304,7 +316,8 @@
         return;
       }
       const tab = await onlyTab(state.target);
-      const shot = await snapshot(tab.tabId);
+      if (tab.tabId !== state.probe?.tabId) throw Error("目标标签页已变更，请重新探测");
+      const { shot } = await page("snapshot");
       if (shot.path !== state.target) throw Error("对话路径改变，停止跨会话派发");
       if (!shot.editorFound) throw Error("目标编辑器不可用");
       const now = Date.now();
@@ -327,10 +340,10 @@
         };
         state.status = "后台填写消息，未发送";
         await save();
-        await fill(tab.tabId, item.text);
+        await fill(item.text);
         state.status = "消息已填写，等待原生发送按钮激活";
         await save();
-      } else if (action === "click") await dispatch(tab.tabId);
+      } else if (action === "click") await dispatch();
       else if (action === "ack") {
         state.flight.phase = "answer";
         state.flight.since = now;
