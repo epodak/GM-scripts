@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-17T06:44:41.193Z",
+  "generatedAt": "2026-10-17T07:18:22.163Z",
   "scripts": [
     {
       "id": "chatgpt-scroll-fix",
@@ -54,7 +54,7 @@
       "id": "chatgpt-scriptcat-worker",
       "kind": "first-party",
       "name": "ScriptCat ChatGPT Queue - Background Agent (PoC)",
-      "version": "2026.10.17.064422",
+      "version": "2026.10.17.070412",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-worker/chatgpt-scriptcat-worker.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-worker/chatgpt-scriptcat-worker.meta.js"
     },
@@ -62,7 +62,7 @@
       "id": "chatgpt-scriptcat-panel",
       "kind": "first-party",
       "name": "ScriptCat ChatGPT Queue - Panel (PoC)",
-      "version": "2026.10.17.064422",
+      "version": "2026.10.17.070412",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-panel/chatgpt-scriptcat-panel.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-panel/chatgpt-scriptcat-panel.meta.js"
     }

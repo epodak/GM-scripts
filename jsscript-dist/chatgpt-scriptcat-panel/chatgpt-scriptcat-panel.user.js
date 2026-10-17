@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Panel (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.064422
+// @version      2026.10.17.070412
 // @description  ScriptCat ChatGPT 队列面板、后台可读性探测与手动启动
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -22,6 +22,7 @@
   // apps/chatgpt-scriptcat-worker/src/engine.js
   var STORE = "scq:state";
   var COMMAND = "scq:command";
+  var ANSWER_TIMEOUT_MS = 30 * 60 * 1e3;
   function canonicalDraft(value) {
     return String(value ?? "").replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").trim();
   }
@@ -48,7 +49,9 @@
       heartbeat: 0,
       lastCommandId: "",
       probe: null,
-      completed: 0
+      completed: 0,
+      waitReason: "",
+      diagnostics: null
     };
   }
 
@@ -140,7 +143,11 @@
       )].some(enabled) || !!doc.querySelector(
         'main [data-is-streaming="true"],main [data-message-streaming="true"],main [data-testid="streaming-indicator"]'
       );
+      const users = messages("user");
       const assistants = messages("assistant");
+      const lastUser = users.at(-1), lastAssistant = assistants.at(-1);
+      const messageKey = (node) => node?.getAttribute("data-chatgpt-search-message-ids") || node?.getAttribute("data-message-id") || node?.closest("[data-message-id]")?.getAttribute("data-message-id") || "";
+      const replyUser = lastAssistant && users.filter((node) => node.compareDocumentPosition(lastAssistant) & win.Node.DOCUMENT_POSITION_FOLLOWING).at(-1);
       const content = assistants.at(-1)?.textContent || "";
       let hash = 2166136261;
       for (let i = 0; i < content.length; i += Math.max(1, Math.floor(content.length / 512)))
@@ -151,9 +158,14 @@
         draft: text(ed),
         editorFound: !!ed,
         sendReady: !!sendButton(ed),
-        users: messages("user").length,
+        users: users.length,
         assistants: assistants.length,
-        fingerprint: `${content.length}:${hash}`
+        fingerprint: `${content.length}:${hash}`,
+        lastUserKey: messageKey(lastUser),
+        lastAssistantKey: messageKey(lastAssistant),
+        assistantUserKey: messageKey(replyUser),
+        visibility: doc.visibilityState || "unknown",
+        documentFocused: typeof doc.hasFocus === "function" ? doc.hasFocus() : false
       };
     }
     function fill(value) {
@@ -249,7 +261,9 @@
       const same = snapshot.target && snapshot.target === current();
       ui.launcher.textContent = "Cat 队列 " + snapshot.items.length;
       ui.heading.textContent = same ? "当前对话已绑定" : "未绑定当前对话";
-      ui.state.textContent = snapshot.status + (snapshot.running ? " · 正在自动执行" : " · 已停机");
+      ui.state.textContent = snapshot.status + (snapshot.running ? " · 正在自动执行" : " · 已停机") + (snapshot.running && snapshot.waitReason ? " · " + snapshot.waitReason : "");
+      const diag = snapshot.diagnostics;
+      ui.diagnostics.textContent = diag ? "阶段 " + diag.phase + " · 已挂载用户/助手 " + diag.users + "/" + diag.assistants + " · 页面 " + diag.visibility + " · 检查于 " + time(diag.checkedAt) : "";
       ui.heartbeat.textContent = "后台心跳：" + (alive ? time(snapshot.heartbeat) : "离线或超时") + " · 已完成 " + snapshot.completed + " 条";
       const checked = snapshot.probe?.checkedAt;
       ui.probe.textContent = snapshot.probe?.ok ? "网页执行端探测成功 · tab " + snapshot.probe.tabId + " · " + (snapshot.probe.inactive ? "后台标签" : "前台标签") + " · 输入框 " + (snapshot.probe.editorFound ? "可用" : "不可用") : checked ? "最近探测失败" : "尚未探测";
@@ -310,7 +324,7 @@
         "</style>",
         '<section class="panel"><header class="bar"><strong>ScriptCat 后台队列实验版</strong><button class="close">×</button></header>',
         '<div class="muted indicator"></div><div class="muted heading"></div><div class="muted state"></div>',
-        '<div class="muted heartbeat"></div><div class="muted probe"></div><div class="error"></div>',
+        '<div class="muted heartbeat"></div><div class="muted probe"></div><div class="muted diagnostics"></div><div class="error"></div>',
         '<div class="buttons"><button class="bind">绑定当前对话</button><button class="ping">探测后台</button></div>',
         '<div class="list"></div><textarea class="prompt" placeholder="输入待发消息，Enter 添加，Shift+Enter 换行"></textarea>',
         '<div class="buttons"><button class="add">Queue 排队</button><button class="steer">Steer 优先</button>',
@@ -328,6 +342,7 @@
         state: q("state"),
         heartbeat: q("heartbeat"),
         probe: q("probe"),
+        diagnostics: q("diagnostics"),
         error: q("error"),
         list: q("list"),
         bind: q("bind"),

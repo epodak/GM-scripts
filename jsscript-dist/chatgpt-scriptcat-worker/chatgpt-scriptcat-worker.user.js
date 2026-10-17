@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Background Agent (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.064422
+// @version      2026.10.17.070412
 // @description  ScriptCat 后台 Chrome 标签探测和安全消息队列执行；需要搭配 Panel
 // @author       epodak
 // @grant        GM_getValue
@@ -24,9 +24,13 @@
   var ANSWER_STABLE_MS = 2600;
   var ACK_TIMEOUT_MS = 15e3;
   var READY_TIMEOUT_MS = 12e3;
+  var ANSWER_TIMEOUT_MS = 30 * 60 * 1e3;
   var MAX_QUEUE = 40;
   function canonicalDraft(value) {
     return String(value ?? "").replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").trim();
+  }
+  function acceptedUserKey(flight, shot) {
+    return shot.lastUserKey && shot.lastUserKey !== flight.userKey && !canonicalDraft(shot.draft) ? shot.lastUserKey : "";
   }
   function conversationPath(url) {
     try {
@@ -51,7 +55,9 @@
       heartbeat: 0,
       lastCommandId: "",
       probe: null,
-      completed: 0
+      completed: 0,
+      waitReason: "",
+      diagnostics: null
     };
   }
   function safeState(data) {
@@ -68,7 +74,8 @@
     if (state.flight) {
       const f = state.flight;
       if (f.phase === "prepare") {
-        if (shot.users !== f.users || shot.assistants !== f.assistants) return "uncertain";
+        const changed = f.userKey && f.assistantKey ? shot.lastUserKey !== f.userKey || shot.lastAssistantKey !== f.assistantKey : shot.users !== f.users || shot.assistants !== f.assistants;
+        if (changed) return "uncertain";
         if (shot.busy) return "wait";
         if (canonicalDraft(shot.draft) !== canonicalDraft(f.text)) return "draft-changed";
         if (shot.sendReady) return "click";
@@ -76,13 +83,16 @@
       }
       if (f.phase === "clicking") return "uncertain";
       if (f.phase === "ack") {
-        if (shot.users > f.users || shot.busy) return "ack";
+        const accepted = f.userKey ? acceptedUserKey(f, shot) : shot.users > f.users || shot.busy;
+        if (accepted) return "ack";
         return now - f.since > ACK_TIMEOUT_MS ? "ack-timeout" : "wait";
       }
       if (f.phase === "answer") {
-        const assistantNew = shot.assistants > f.assistants;
-        if (!assistantNew || shot.busy) return "wait";
-        if (f.lastFingerprint !== shot.fingerprint || !f.stableSince) return "stabilize";
+        const ownUserKey = f.acceptedUserKey || acceptedUserKey(f, shot);
+        const assistantNew = f.assistantKey ? !!ownUserKey && shot.assistantUserKey === ownUserKey && !!shot.lastAssistantKey && shot.lastAssistantKey !== f.assistantKey : shot.assistants > f.assistants;
+        if (!assistantNew || shot.busy)
+          return now - f.since > ANSWER_TIMEOUT_MS ? "answer-timeout" : "wait";
+        if (f.lastFingerprint !== shot.fingerprint || f.assistantKey && f.stableAssistantKey !== shot.lastAssistantKey || !f.stableSince) return "stabilize";
         return now - f.stableSince >= ANSWER_STABLE_MS ? "complete" : "wait";
       }
       return "uncertain";
@@ -216,12 +226,14 @@
     });
     async function save() {
       state.heartbeat = Date.now();
+      if (state.diagnostics) state.diagnostics.phase = state.flight?.phase || "idle";
       await GM.setValue(STORE, { ...state });
     }
     function stop(reason) {
       state.running = false;
       state.error = reason;
       state.status = "安全暂停";
+      state.waitReason = "";
     }
     async function onlyTab(path) {
       if (!alive || typeof CAT.agent.dom.listTabs !== "function") {
@@ -338,6 +350,16 @@
         else if (!state.idleSince) state.idleSince = now;
       }
       const action = actionFor(state, shot, now);
+      state.diagnostics = {
+        phase: state.flight?.phase || "idle",
+        action,
+        users: shot.users,
+        assistants: shot.assistants,
+        visibility: shot.visibility || "unknown",
+        documentFocused: shot.documentFocused === true,
+        checkedAt: now
+      };
+      if (action !== "wait") state.waitReason = "";
       if (action === "prepare") {
         const item = state.items[0];
         state.flight = {
@@ -347,6 +369,8 @@
           since: now,
           users: shot.users,
           assistants: shot.assistants,
+          userKey: shot.lastUserKey || "",
+          assistantKey: shot.lastAssistantKey || "",
           lastFingerprint: "",
           stableSince: 0
         };
@@ -357,6 +381,7 @@
         await save();
       } else if (action === "click") await dispatch();
       else if (action === "ack") {
+        state.flight.acceptedUserKey = acceptedUserKey(state.flight, shot);
         state.flight.phase = "answer";
         state.flight.since = now;
         state.status = "ChatGPT 已接受消息，等待回复完成";
@@ -364,6 +389,7 @@
       } else if (action === "stabilize") {
         state.flight.stableSince = now;
         state.flight.lastFingerprint = shot.fingerprint;
+        state.flight.stableAssistantKey = shot.lastAssistantKey || "";
         state.status = "正在确认回复稳定完成";
         await save();
       } else if (action === "complete") {
@@ -380,9 +406,18 @@
       } else if (action === "ack-timeout") {
         stop("已点击发送但未确认 ChatGPT 接收，禁止再次点击");
         await save();
+      } else if (action === "answer-timeout") {
+        stop("消息已提交，但 30 分钟内未确认对应回复完成；请核对聊天记录，不会重新发送。");
+        await save();
       } else if (action === "draft-changed" || action === "uncertain") {
         stop("原生草稿变更或点击状态不确定，已安全暂停");
         await save();
+      } else if (action === "wait") {
+        const reason = shot.busy ? "等待网页生成结束" : !state.flight && shot.draft ? "原生输入框有草稿，等待人工处理" : state.flight?.phase === "prepare" ? "等待原生发送按钮就绪" : state.flight?.phase === "ack" ? "等待本次用户消息出现在转录中" : state.flight?.phase === "answer" ? "等待本条消息对应的回复完成" : "等待安全空闲窗口";
+        if (state.waitReason !== reason) {
+          state.waitReason = reason;
+          await save();
+        }
       }
     }
     async function spin() {
