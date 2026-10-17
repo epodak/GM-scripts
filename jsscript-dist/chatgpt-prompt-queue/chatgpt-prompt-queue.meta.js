@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Prompt Queue (Safe Steer)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.17.044659
+// @version      2026.10.17.055040
 // @description  ChatGPT 消息队列：完成确认、优先转向、暂停排序，避免流式抢发
 // @author       epodak (inspired by nihaltp/ChatGPT Prompt Queue, MIT)
 // @match        https://chatgpt.com/*

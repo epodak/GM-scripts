@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-17T04:47:15.491Z",
+  "generatedAt": "2026-10-17T05:50:54.163Z",
   "scripts": [
     {
       "id": "chatgpt-scroll-fix",
       "kind": "first-party",
       "name": "ChatGPT Scroll Fix (Safe Wheel Fallback)",
-      "version": "2026.10.14.143751",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scroll-fix/chatgpt-scroll-fix.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scroll-fix/chatgpt-scroll-fix.meta.js"
     },
@@ -14,7 +14,7 @@
       "id": "chatgpt-beijing-time",
       "kind": "first-party",
       "name": "ChatGPT Beijing Time (UTC+08:00)",
-      "version": "2026.10.16.085240",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-beijing-time/chatgpt-beijing-time.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-beijing-time/chatgpt-beijing-time.meta.js"
     },
@@ -22,7 +22,7 @@
       "id": "chatgpt-sidebar-project-marker",
       "kind": "first-party",
       "name": "ChatGPT Sidebar Project Marker",
-      "version": "2026.10.12.014520",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-sidebar-project-marker/chatgpt-sidebar-project-marker.meta.js"
     },
@@ -30,7 +30,7 @@
       "id": "example-hello",
       "kind": "first-party",
       "name": "JSScript Example Hello",
-      "version": "2026.10.11.230952",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/example-hello/example-hello.meta.js"
     },
@@ -38,7 +38,7 @@
       "id": "smartedu-textbook-pdf",
       "kind": "first-party",
       "name": "国家中小学智慧教育平台 · 电子课本 PDF 下载",
-      "version": "2026.10.12.124956",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/smartedu-textbook-pdf/smartedu-textbook-pdf.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/smartedu-textbook-pdf/smartedu-textbook-pdf.meta.js"
     },
@@ -46,9 +46,25 @@
       "id": "chatgpt-prompt-queue",
       "kind": "first-party",
       "name": "ChatGPT Prompt Queue (Safe Steer)",
-      "version": "2026.10.17.044659",
+      "version": "2026.10.17.055040",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-prompt-queue/chatgpt-prompt-queue.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-prompt-queue/chatgpt-prompt-queue.meta.js"
+    },
+    {
+      "id": "chatgpt-scriptcat-worker",
+      "kind": "first-party",
+      "name": "ScriptCat ChatGPT Queue - Background Agent (PoC)",
+      "version": "2026.10.17.055040",
+      "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-worker/chatgpt-scriptcat-worker.user.js",
+      "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-worker/chatgpt-scriptcat-worker.meta.js"
+    },
+    {
+      "id": "chatgpt-scriptcat-panel",
+      "kind": "first-party",
+      "name": "ScriptCat ChatGPT Queue - Panel (PoC)",
+      "version": "2026.10.17.055040",
+      "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-panel/chatgpt-scriptcat-panel.user.js",
+      "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-scriptcat-panel/chatgpt-scriptcat-panel.meta.js"
     }
   ]
 }

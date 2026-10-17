@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSScript Example Hello
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.11.230952
+// @version      2026.10.17.055040
 // @description  jsscript 供应链的最小可运行示例。
 // @author       epodak
 // @match        https://example.com/*
