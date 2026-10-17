@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Background Agent (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.055040
+// @version      2026.10.17.060006
 // @description  ScriptCat 后台 Chrome 标签探测和安全消息队列执行；需要搭配 Panel
 // @author       epodak
 // @grant        GM_getValue
@@ -195,11 +195,13 @@
       return tab;
     }
     async function snapshot(tabId) {
-      const result = await CAT.agent.dom.executeScript(snapshotCode, { tabId, world: "ISOLATED" });
-      if (!result || typeof result !== "object" || typeof result.path !== "string" || typeof result.busy !== "boolean" || typeof result.users !== "number") {
-        throw Error("executeScript 未返回预期 DOM 快照；实际返回类型：" + (result === null ? "null" : typeof result));
+      const response = await CAT.agent.dom.executeScript(snapshotCode, { tabId, world: "ISOLATED" });
+      const shot = response && typeof response === "object" && "result" in response ? response.result : response;
+      if (!shot || typeof shot !== "object" || typeof shot.path !== "string" || typeof shot.busy !== "boolean" || typeof shot.users !== "number" || typeof shot.assistants !== "number" || typeof shot.draft !== "string" || typeof shot.editorFound !== "boolean" || typeof shot.sendReady !== "boolean" || typeof shot.fingerprint !== "string") {
+        const keys = response && typeof response === "object" ? Object.keys(response).slice(0, 12).join(",") : String(response);
+        throw Error("executeScript 快照格式异常（返回字段：" + keys.slice(0, 120) + "）。请核对 ScriptCat Agent 版本与网站结构。");
       }
-      return result;
+      return shot;
     }
     async function probe() {
       const tab = await onlyTab(state.target);
