@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Background Agent (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.062314
+// @version      2026.10.17.064422
 // @description  ScriptCat 后台 Chrome 标签探测和安全消息队列执行；需要搭配 Panel
 // @author       epodak
 // @grant        GM_getValue
@@ -25,6 +25,9 @@
   var ACK_TIMEOUT_MS = 15e3;
   var READY_TIMEOUT_MS = 12e3;
   var MAX_QUEUE = 40;
+  function canonicalDraft(value) {
+    return String(value ?? "").replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").trim();
+  }
   function conversationPath(url) {
     try {
       const u = new URL(url);
@@ -65,8 +68,9 @@
     if (state.flight) {
       const f = state.flight;
       if (f.phase === "prepare") {
+        if (shot.users !== f.users || shot.assistants !== f.assistants) return "uncertain";
         if (shot.busy) return "wait";
-        if (shot.draft !== f.text) return "draft-changed";
+        if (canonicalDraft(shot.draft) !== canonicalDraft(f.text)) return "draft-changed";
         if (shot.sendReady) return "click";
         return now - f.since > READY_TIMEOUT_MS ? "ready-timeout" : "wait";
       }
@@ -129,6 +133,14 @@
     } else if (cmd.type === "pause") {
       next.running = false;
       next.status = "已暂停";
+    } else if (cmd.type === "retry-prepared") {
+      if (next.running || next.flight?.phase !== "prepare" || !next.probe?.ok || next.probe.path !== next.target || !next.probe.instance) {
+        next.error = "只能恢复已暂停且尚未点击发送的准备阶段；请先重新探测。";
+      } else {
+        next.running = true;
+        next.status = "人工确认尚未发送，重新校验现有原生草稿";
+        next.idleSince = 0;
+      }
     } else if (cmd.type === "clear") {
       if (next.flight) next.error = "有未确认的发送记录；请先核对，不能直接清空。";
       else {

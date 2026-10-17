@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Panel (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.062314
+// @version      2026.10.17.064422
 // @description  ScriptCat ChatGPT 队列面板、后台可读性探测与手动启动
 // @author       epodak
 // @match        https://chatgpt.com/*
@@ -22,6 +22,9 @@
   // apps/chatgpt-scriptcat-worker/src/engine.js
   var STORE = "scq:state";
   var COMMAND = "scq:command";
+  function canonicalDraft(value) {
+    return String(value ?? "").replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").trim();
+  }
   function conversationPath(url) {
     try {
       const u = new URL(url);
@@ -95,11 +98,25 @@
   }
 
   // apps/chatgpt-scriptcat-panel/src/page.js
+  function readComposerText(el) {
+    if (!el) return "";
+    if ("value" in el) return canonicalDraft(el.value);
+    const children = [...el.childNodes];
+    if (children.length && children.every((node) => node.nodeType === 1 && (node.tagName === "P" || node.tagName === "DIV"))) {
+      const lines = children.map((node) => {
+        if (node.childNodes.length === 1 && node.firstElementChild?.tagName === "BR") return "";
+        const rendered = String(node.innerText ?? node.textContent ?? "");
+        return rendered.replace(/\n$/, "");
+      });
+      return canonicalDraft(lines.join("\n"));
+    }
+    return canonicalDraft(el.innerText ?? el.textContent ?? "");
+  }
   function createPageActions(doc, win) {
     const editorSelector = '#prompt-textarea,[data-testid="prompt-textarea"],[data-testid="composer-text-input"],form [contenteditable="true"][role="textbox"],form [contenteditable="true"],form textarea';
     const sendSelector = 'button#composer-submit-button,button[data-testid="send-button"],button[data-testid="composer-send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="发送"],button[aria-label="发送消息"]';
     const editor = () => [...doc.querySelectorAll(editorSelector)].find((el) => !el.disabled && ("value" in el || el.getAttribute("contenteditable") === "true")) || null;
-    const text = (el) => !el ? "" : String("value" in el ? el.value : el.innerText ?? el.textContent ?? "").trim();
+    const text = readComposerText;
     function enabled(el) {
       if (!el?.isConnected || el.disabled || el.getAttribute("aria-disabled") === "true") return false;
       const style = win.getComputedStyle(el);
@@ -165,13 +182,15 @@
         }
       }
       const after = snapshot();
-      if (after.draft !== value) throw Error("原生输入框填写校验失败，未点击发送");
+      if (after.draft !== canonicalDraft(value))
+        throw Error("原生输入框填写校验失败（期望 " + canonicalDraft(value).length + " 字，读到 " + after.draft.length + " 字）；未点击发送。");
       return after;
     }
     function click(value) {
       const before = snapshot();
       const button = sendButton(editor());
-      if (before.busy || before.draft !== value || !button) throw Error("点击前草稿或发送按钮已变化，未发送");
+      if (before.busy || before.draft !== canonicalDraft(value) || !button)
+        throw Error("点击前草稿或发送按钮已变化，未发送");
       button.click();
       return snapshot();
     }
@@ -194,6 +213,7 @@
       if (pending) return;
       if (type === "add" && !editor.value.trim()) return;
       if (type === "start" && !confirm("确认由 ScriptCat 后台自动发送队列消息？请先关闭 Tampermonkey 旧版消息队列。")) return;
+      if (type === "retry-prepared" && !confirm("请先确认第一条消息尚未发送，且原生输入框里的草稿完整无误。\n将重新校验现有草稿；如有人工发送或内容变化，会安全暂停。继续吗？")) return;
       if (type === "clear" && !confirm("清空已绑定对话的全部未发送消息？")) return;
       if (type === "resolve" && !confirm("你已经在 ChatGPT 中核对这条消息确实发送了吗？\n确认后会移除这条，但仍保持暂停。")) return;
       const id = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
@@ -259,6 +279,7 @@
       ui.pause.disabled = Boolean(pending) || !snapshot.running;
       ui.clear.disabled = Boolean(pending) || !snapshot.items.length || Boolean(snapshot.flight);
       ui.resolve.disabled = Boolean(pending) || !snapshot.flight;
+      ui.retry.disabled = Boolean(pending) || !alive || !same || snapshot.running || snapshot.flight?.phase !== "prepare" || !snapshot.probe?.ok;
       const usable = alive && snapshot.probe?.ok;
       ui.indicator.textContent = !alive ? "○ 后台未连接" : usable ? "● 调度在线 · 网页探测通过" : "● 调度在线 · 网页尚不可用";
       ui.indicator.style.color = usable ? "#16a34a" : "#b45309";
@@ -294,7 +315,7 @@
         '<div class="list"></div><textarea class="prompt" placeholder="输入待发消息，Enter 添加，Shift+Enter 换行"></textarea>',
         '<div class="buttons"><button class="add">Queue 排队</button><button class="steer">Steer 优先</button>',
         '<button class="start">开始执行</button><button class="pause">暂停</button></div>',
-        '<div class="buttons"><button class="clear">清空队列</button><button class="resolve">确认已发送并移除待定项</button></div>',
+        '<div class="buttons"><button class="retry">核对草稿后继续</button><button class="clear">清空队列</button><button class="resolve">确认已发送并移除待定项</button></div>',
         '<div class="muted">实验版：Steer 只调整下一条执行顺序，不会强制中断当前回答。</div>',
         '</section><button class="launcher">Cat 队列</button>'
       ].join("");
@@ -315,6 +336,7 @@
         steer: q("steer"),
         start: q("start"),
         pause: q("pause"),
+        retry: q("retry"),
         clear: q("clear"),
         resolve: q("resolve")
       };
@@ -327,6 +349,7 @@
       ui.steer.addEventListener("click", () => command("add", { text: editor.value, kind: "steer" }));
       ui.start.addEventListener("click", () => command("start"));
       ui.pause.addEventListener("click", () => command("pause"));
+      ui.retry.addEventListener("click", () => command("retry-prepared"));
       ui.clear.addEventListener("click", () => command("clear"));
       ui.resolve.addEventListener("click", () => command("resolve"));
       editor.addEventListener("keydown", (event) => {
