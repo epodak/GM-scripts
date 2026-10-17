@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Prompt Queue (Safe Steer)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.10.17.034554
+// @version      2026.10.17.044659
 // @description  ChatGPT 消息队列：完成确认、优先转向、暂停排序，避免流式抢发
 // @author       epodak (inspired by nihaltp/ChatGPT Prompt Queue, MIT)
 // @match        https://chatgpt.com/*
@@ -17,8 +17,29 @@
 (() => {
   // apps/chatgpt-prompt-queue/src/scheduler.js
   var IDLE_MS = 1400;
-  function decide({ running, pending, busy, lastBusyAt, flight, now, draftEmpty, userCount }) {
+  var READY_TIMEOUT_MS = 12e3;
+  function decide({
+    running,
+    pending,
+    busy,
+    lastBusyAt,
+    flight,
+    now,
+    draftEmpty,
+    draftMatches,
+    sendReady,
+    userCount
+  }) {
     if (!running) return "wait";
+    if (flight?.phase === "prepare") {
+      if (draftEmpty) {
+        return userCount > flight.baselineUsers || flight.sawBusy ? "manual-ack" : "draft-lost";
+      }
+      if (!draftMatches) return "draft-changed";
+      if (busy) return "wait";
+      if (sendReady) return "dispatch";
+      return now - flight.startedAt >= READY_TIMEOUT_MS ? "prepare-timeout" : "wait";
+    }
     if (flight?.phase === "ack") {
       if (draftEmpty && (flight.sawBusy || userCount > flight.baselineUsers)) return "ack";
       return now - flight.startedAt >= 12e3 ? "uncertain" : "wait";
@@ -91,9 +112,13 @@
     function composer() {
       for (const selector of [
         "#prompt-textarea",
+        '[data-testid="prompt-textarea"]',
         '[data-testid="composer-text-input"]',
+        'form [contenteditable="true"][data-lexical-editor="true"]',
+        'form .ProseMirror[contenteditable="true"]',
         'form [contenteditable="true"][role="textbox"]',
-        "form textarea"
+        "form textarea",
+        'textarea[name="prompt-textarea"]'
       ]) {
         for (const el of document.querySelectorAll(selector)) {
           if (el.closest("#" + ID) || !el.isConnected || el.disabled) continue;
@@ -106,9 +131,20 @@
       return !el ? "" : "value" in el ? String(el.value || "") : String(el.innerText ?? el.textContent ?? "");
     }
     function sendButton(el) {
-      const form = el?.closest("form") || el?.closest('[data-testid*="composer"]') || document;
-      const css = 'button[data-testid="send-button"],button[data-testid="composer-send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="发送"],button[aria-label="发送消息"]';
-      return [...form.querySelectorAll(css), ...document.querySelectorAll('button[data-testid="send-button"]')].find(activeButton) || null;
+      const form = el?.closest("form") || document.querySelector("form[data-chatgpt-composer]");
+      const scope = form || el?.closest('[data-testid*="composer"]') || document;
+      const css = 'button#composer-submit-button,button[data-testid="send-button"],button[data-testid="composer-send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="发送"],button[aria-label="发送消息"]';
+      const explicit = [...scope.querySelectorAll(css)];
+      if (scope === document || !explicit.length) {
+        explicit.push(...document.querySelectorAll(
+          'button#composer-submit-button,button[data-testid="send-button"]'
+        ));
+      }
+      const enabled = explicit.find(activeButton);
+      if (enabled) return enabled;
+      if (!form) return null;
+      const submitters = [...form.querySelectorAll('button[type="submit"]')].filter(activeButton);
+      return submitters.length === 1 ? submitters[0] : null;
     }
     function userMessages() {
       return document.querySelectorAll('main [data-message-author-role="user"]').length;
@@ -160,22 +196,15 @@
         return pause("无法填入消息；未发送。");
       }
       if (getText(el).trim() !== item.text.trim()) return pause("消息填入验证失败；未发送。");
-      const button = sendButton(el);
-      if (!button) return pause("发送按钮尚不可用；未自动发送。");
       state.flight = {
         id: item.id,
-        phase: "ack",
+        text: item.text,
+        phase: "prepare",
         sawBusy: false,
         startedAt: Date.now(),
         baselineUsers
       };
-      state.status = "发送确认中";
-      try {
-        button.click();
-      } catch {
-        state.flight = null;
-        return pause("点击发送失败；请检查原生草稿。");
-      }
+      state.status = "已填入消息，等待发送按钮";
       render();
     }
     function followRoute() {
@@ -207,6 +236,9 @@
         state.lastBusyAt = now;
         if (state.flight) state.flight.sawBusy = true;
       }
+      const editor = composer();
+      const draft = getText(editor).trim();
+      const readyButton = state.flight?.phase === "prepare" && !generating ? sendButton(editor) : null;
       const result = decide({
         running: state.running,
         pending: state.items.length > 0,
@@ -214,10 +246,26 @@
         lastBusyAt: state.lastBusyAt,
         flight: state.flight,
         now,
-        draftEmpty: !getText(composer()).trim(),
+        draftEmpty: !draft,
+        draftMatches: draft === state.flight?.text?.trim(),
+        sendReady: Boolean(readyButton),
         userCount: userMessages()
       });
-      if (result === "ack") {
+      if (result === "dispatch") {
+        const flight = state.flight;
+        if (!flight || flight.phase !== "prepare" || getText(composer()).trim() !== flight.text.trim() || !readyButton || !activeButton(readyButton) || busy()) return;
+        flight.phase = "ack";
+        flight.startedAt = now;
+        flight.sawBusy = false;
+        state.status = "发送确认中";
+        try {
+          readyButton.click();
+        } catch {
+          state.flight = null;
+          return pause("点击发送失败；请人工检查原生草稿。");
+        }
+        render();
+      } else if (result === "ack" || result === "manual-ack") {
         state.items = state.items.filter((x) => x.id !== state.flight.id);
         store();
         state.flight.phase = "answer";
@@ -230,6 +278,15 @@
       } else if (result === "send") {
         if (state.scope === "unsupported") pause("请先进入一个对话。");
         else begin();
+      } else if (result === "prepare-timeout") {
+        state.flight = null;
+        pause("内容已填入，但等待 12 秒发送按钮仍不可用；已暂停，请检查输入区或手动发送。");
+      } else if (result === "draft-changed") {
+        state.flight = null;
+        pause("输入框内容发生人工变更；自动发送已取消，原生草稿保持不变。");
+      } else if (result === "draft-lost") {
+        state.flight = null;
+        pause("消息输入区已清空但未确认发送成功；已暂停，防止重复。");
       } else if (result === "uncertain") {
         state.flight = null;
         pause("未确认发送成功，已安全暂停；请人工检查避免重复。");
