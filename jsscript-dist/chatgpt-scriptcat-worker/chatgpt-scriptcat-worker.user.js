@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScriptCat ChatGPT Queue - Background Agent (PoC)
 // @namespace    https://github.com/epodak/jsscript/scriptcat
-// @version      2026.10.17.070412
+// @version      2026.10.24.041910
 // @description  ScriptCat 后台 Chrome 标签探测和安全消息队列执行；需要搭配 Panel
 // @author       epodak
 // @grant        GM_getValue
