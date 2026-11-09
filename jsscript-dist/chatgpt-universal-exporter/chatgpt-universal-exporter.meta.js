@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Universal Exporter (epodak Fork)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.11.09.045828
+// @version      2026.11.09.064114
 // @description  导出 ChatGPT 对话为 JSON+Markdown ZIP；稳定悬浮按钮、SPA 自动恢复、内置 JSZip（基于 huhu v1.6.0）。
 // @author       huhu; epodak (fork fixes)
 // @match        https://chatgpt.com/*

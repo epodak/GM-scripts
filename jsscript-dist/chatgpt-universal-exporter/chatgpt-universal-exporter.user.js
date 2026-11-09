@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Universal Exporter (epodak Fork)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.11.09.045828
+// @version      2026.11.09.064114
 // @description  导出 ChatGPT 对话为 JSON+Markdown ZIP；稳定悬浮按钮、SPA 自动恢复、内置 JSZip（基于 huhu v1.6.0）。
 // @author       huhu; epodak (fork fixes)
 // @match        https://chatgpt.com/*
@@ -2988,11 +2988,14 @@
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(a.href), 6e4);
     }
-    const FAB_SIZE = 44;
+    const FAB_SIZE = 48;
     const FAB_AUTO_COLLAPSE = false;
     const FAB_DRAG_THRESHOLD = 6;
     const FAB_EDGE_SNAP = 36;
     const FAB_STORAGE_KEY = "chatgpt-exporter-fab-v1";
+    const FAB_BUTTON_ID = "epodak-chatgpt-exporter-fab";
+    const FAB_STYLE_ID = "epodak-chatgpt-exporter-fab-style";
+    const FAB_STATUS_ID = "epodak-chatgpt-exporter-fab-status";
     const FAB_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
     const fabState = { x: null, y: null, docked: null, collapsed: false };
     let fabDragInfo = null;
@@ -3041,16 +3044,16 @@
       }
     }
     function fabStatusEl() {
-      let el = document.getElementById("gre-fab-status");
+      let el = document.getElementById(FAB_STATUS_ID);
       if (!el) {
         el = document.createElement("div");
-        el.id = "gre-fab-status";
-        document.body.appendChild(el);
+        el.id = FAB_STATUS_ID;
+        (document.documentElement || document.body).appendChild(el);
       }
       return el;
     }
     function fabPositionStatus(btn) {
-      const pill = document.getElementById("gre-fab-status");
+      const pill = document.getElementById(FAB_STATUS_ID);
       if (!pill) return;
       const rect = btn.getBoundingClientRect();
       const left = fabState.x > window.innerWidth / 2 ? rect.left - pill.offsetWidth - 10 : rect.right + 10;
@@ -3060,8 +3063,8 @@
     function fabApply(btn, pos, persist = false) {
       fabState.x = pos.x;
       fabState.y = pos.y;
-      btn.style.left = `${Math.round(pos.x - FAB_SIZE / 2)}px`;
-      btn.style.top = `${Math.round(pos.y - FAB_SIZE / 2)}px`;
+      btn.style.setProperty("left", `${Math.round(pos.x - FAB_SIZE / 2)}px`, "important");
+      btn.style.setProperty("top", `${Math.round(pos.y - FAB_SIZE / 2)}px`, "important");
       fabPositionStatus(btn);
       if (persist) saveFabState();
     }
@@ -3105,7 +3108,7 @@
       btn.classList.remove("gre-busy", "gre-progress", "gre-done", "gre-error");
       const ring = btn.querySelector(".gre-fab-ring");
       const badge = btn.querySelector(".gre-fab-badge");
-      document.getElementById("gre-fab-status")?.classList.remove("gre-visible");
+      document.getElementById(FAB_STATUS_ID)?.classList.remove("gre-visible");
       if (text === EXPORT_BUTTON_LABEL) {
         if (badge) badge.textContent = "";
         btn.title = `ChatGPT Exporter v${EXPORTER_VERSION} · 点击导出 · 拖动移动 · 右键重置位置`;
@@ -3132,9 +3135,9 @@
       fabExpand(btn);
     }
     function ensureFabStyle() {
-      if (document.getElementById("gre-fab-style")) return;
+      if (document.getElementById(FAB_STYLE_ID)) return;
       const style = document.createElement("style");
-      style.id = "gre-fab-style";
+      style.id = FAB_STYLE_ID;
       style.textContent = `
 #gpt-rescue-btn {
     position: fixed !important;
@@ -3148,16 +3151,16 @@
     padding: 0;
     border-radius: 999px;
     border: 1px solid rgba(0, 0, 0, .08);
-    background: rgba(255, 255, 255, .88);
-    color: #0d0d0d;
+    background: #10a37f;
+    color: #fff;
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, .16);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .28);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: grab;
-    z-index: 2147483000 !important;
+    z-index: 2147483647 !important;
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
@@ -3170,9 +3173,9 @@
 #gpt-rescue-btn:focus-visible { outline: 2px solid #10a37f; outline-offset: 2px; }
 
 html.dark #gpt-rescue-btn {
-    background: rgba(52, 53, 65, .92);
-    border-color: rgba(255, 255, 255, .14);
-    color: #ececec;
+    background: #10a37f;
+    border-color: rgba(255, 255, 255, .35);
+    color: #fff;
 }
 
 .gre-fab-icon {
@@ -3262,15 +3265,16 @@ html.dark #gre-fab-status {
     color: #ececec;
 }
 `;
-      document.head.appendChild(style);
+      style.textContent = style.textContent.replaceAll("#gpt-rescue-btn", `#${FAB_BUTTON_ID}`).replaceAll("#gre-fab-status", `#${FAB_STATUS_ID}`);
+      (document.head || document.documentElement).appendChild(style);
     }
     function createFabButton() {
-      let btn = document.getElementById("gpt-rescue-btn");
+      let btn = document.getElementById(FAB_BUTTON_ID);
       if (!btn) {
         btn = document.createElement("button");
-        btn.id = "gpt-rescue-btn";
+        btn.id = FAB_BUTTON_ID;
         btn.type = "button";
-        document.body.appendChild(btn);
+        (document.documentElement || document.body).appendChild(btn);
       }
       if (!btn.querySelector(".gre-fab-ring")) {
         btn.textContent = "";
@@ -3307,7 +3311,7 @@ html.dark #gre-fab-status {
           fabDragInfo.moved = true;
           btn.classList.add("gre-dragging");
           fabExpand(btn);
-          document.getElementById("gre-fab-status")?.classList.remove("gre-visible");
+          document.getElementById(FAB_STATUS_ID)?.classList.remove("gre-visible");
         }
         fabApply(btn, fabClamp({ x: fabDragInfo.originX + dx, y: fabDragInfo.originY + dy }));
       });
@@ -3362,13 +3366,25 @@ html.dark #gre-fab-status {
         }, 1500);
       });
       window.addEventListener("resize", () => {
-        if (!document.body.contains(btn)) return;
+        if (!btn.isConnected) return;
         fabApply(btn, fabSnap(fabClamp({ x: fabState.x, y: fabState.y })), true);
       });
     }
     function getExportButton() {
       ensureFabStyle();
       const btn = createFabButton();
+      for (const [property, value] of Object.entries({
+        position: "fixed",
+        display: "flex",
+        visibility: "visible",
+        opacity: "1",
+        pointerEvents: "auto",
+        zIndex: "2147483647",
+        boxSizing: "border-box"
+      })) {
+        const cssProperty = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+        btn.style.setProperty(cssProperty, value, "important");
+      }
       bindFabEvents(btn);
       if (fabState.x == null || !btn.style.left || !btn.style.top) {
         const saved = fabState.x != null ? { ...fabState } : loadFabState();
@@ -3381,7 +3397,7 @@ html.dark #gre-fab-status {
       return btn;
     }
     function initFab() {
-      if (!document.body) {
+      if (!document.documentElement) {
         setTimeout(initFab, 200);
         return;
       }
@@ -3392,8 +3408,8 @@ html.dark #gre-fab-status {
       if (fabRecoveryTimer != null) return;
       fabRecoveryTimer = setTimeout(() => {
         fabRecoveryTimer = null;
-        if (!document.body) return;
-        if (!document.getElementById("gpt-rescue-btn") || !document.getElementById("gre-fab-style")) {
+        if (!document.documentElement) return;
+        if (!document.getElementById(FAB_BUTTON_ID) || !document.getElementById(FAB_STYLE_ID)) {
           try {
             initFab();
           } catch (error) {
@@ -3403,7 +3419,7 @@ html.dark #gre-fab-status {
       }, 100);
     }
     const fabObserver = new MutationObserver(() => {
-      if (!document.body || document.getElementById("gpt-rescue-btn") && document.getElementById("gre-fab-style")) return;
+      if (!document.documentElement || document.getElementById(FAB_BUTTON_ID) && document.getElementById(FAB_STYLE_ID)) return;
       scheduleFabRecovery();
     });
     fabObserver.observe(document.documentElement, { childList: true, subtree: true });

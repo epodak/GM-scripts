@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-09T04:58:53.321Z",
+  "generatedAt": "2026-11-09T06:41:40.483Z",
   "scripts": [
     {
       "id": "chatgpt-scroll-fix",
@@ -30,7 +30,7 @@
       "id": "chatgpt-universal-exporter",
       "kind": "first-party",
       "name": "ChatGPT Universal Exporter (epodak Fork)",
-      "version": "2026.11.09.045828",
+      "version": "2026.11.09.064114",
       "installURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-universal-exporter/chatgpt-universal-exporter.user.js",
       "updateURL": "https://raw.githubusercontent.com/epodak/GM-scripts/master/jsscript-dist/chatgpt-universal-exporter/chatgpt-universal-exporter.meta.js"
     },
