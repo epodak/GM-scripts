@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT Universal Exporter (epodak Fork)
 // @namespace    https://github.com/epodak/jsscript
-// @version      2026.11.09.064114
-// @description  导出 ChatGPT 对话为 JSON+Markdown ZIP；稳定悬浮按钮、SPA 自动恢复、内置 JSZip（基于 huhu v1.6.0）。
+// @version      2026.11.10.030834
+// @description  导出 ChatGPT 对话为 JSON+Markdown ZIP；保留原选择窗口，选择器每次渐进加载 100 条并可持续加载更多；稳定悬浮按钮、内置 JSZip。
 // @author       huhu; epodak (fork fixes)
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -2577,7 +2577,7 @@
       const jsonName = generateUniqueFilename(convData);
       return jsonName.endsWith(".json") ? `${jsonName.slice(0, -5)}.md` : `${jsonName}.md`;
     }
-    const EXPORTER_VERSION = "1.6.1";
+    const EXPORTER_VERSION = "1.6.2";
     const EXPORT_BUTTON_LABEL = `Export Conversations v${EXPORTER_VERSION}`;
     const MIME_EXTENSIONS = {
       "image/png": ".png",
@@ -3990,6 +3990,178 @@ html.dark #gre-fab-status {
       const entries = Array.from(map.values()).sort((a, b) => (b.update_time || 0) - (a.update_time || 0));
       return { entries, problems };
     }
+    function createConversationListing({ mode, accountId, session = null }) {
+      const map = /* @__PURE__ */ new Map();
+      const problems = [];
+      const root = { phase: mode === "project" ? "projects" : "active", offset: 0 };
+      let projectListCursor = null;
+      let projectListDone = false;
+      const seenProjectCursors = /* @__PURE__ */ new Set();
+      const projects = [];
+      let projectIndex = 0;
+      let currentProject = null;
+      let projectCursor = "0";
+      let projectFetchedAny = false;
+      let lastRequestAt = 0;
+      let loading = false;
+      const hasMore = () => {
+        if (root.phase === "active" || root.phase === "archived") return true;
+        if (currentProject || projectIndex < projects.length) return true;
+        return !projectListDone;
+      };
+      async function requestJson(path, label) {
+        session?.throwIfCancelled();
+        if (lastRequestAt) {
+          const remaining = BASE_DELAY + Math.random() * JITTER - (Date.now() - lastRequestAt);
+          if (remaining > 0) {
+            if (session) await session.wait(remaining);
+            else await sleep(remaining);
+          }
+        }
+        session?.throwIfCancelled();
+        const response = await apiFetch(path, { accountId, session, label });
+        lastRequestAt = Date.now();
+        return response.json();
+      }
+      async function loadRootPage() {
+        const isArchived = root.phase === "archived";
+        const params = new URLSearchParams({
+          offset: String(root.offset),
+          limit: String(PAGE_LIMIT),
+          order: "updated"
+        });
+        if (isArchived) params.set("is_archived", "true");
+        const data = await requestJson("/backend-api/conversations?" + params, "获取对话列表失败");
+        const items = Array.isArray(data.items) ? data.items : [];
+        const sizeBefore = map.size;
+        items.forEach((item) => upsertConversationEntry(map, item, { is_archived: isArchived }));
+        root.offset += items.length;
+        const reachedEnd = items.length === 0 || map.size === sizeBefore || Number.isFinite(data.total) && root.offset >= data.total;
+        if (reachedEnd) {
+          root.phase = isArchived ? "projects" : "archived";
+          root.offset = 0;
+        }
+      }
+      async function loadProjectListPage() {
+        const requestCursor = projectListCursor;
+        const cursorKey = requestCursor || "__first__";
+        if (seenProjectCursors.has(cursorKey)) {
+          projectListDone = true;
+          return;
+        }
+        seenProjectCursors.add(cursorKey);
+        const params = new URLSearchParams({ limit: String(PROJECT_SIDEBAR_LIMIT) });
+        const query = mode === "team" ? {} : {
+          conversationsPerGizmo: PROJECT_SIDEBAR_PREVIEW,
+          ownedOnly: true
+        };
+        if (query.conversationsPerGizmo !== void 0) {
+          params.set("conversations_per_gizmo", String(query.conversationsPerGizmo));
+        }
+        if (query.ownedOnly !== void 0) params.set("owned_only", "true");
+        if (requestCursor) params.set("cursor", requestCursor);
+        try {
+          const data = await requestJson("/backend-api/gizmos/snorlax/sidebar?" + params, "获取项目列表失败");
+          (data.items || []).forEach((item) => {
+            const project = normalizeProjectSpaceItem(item);
+            if (project && !projects.some((existing) => existing.id === project.id)) projects.push(project);
+          });
+          const nextCursor = data.cursor || null;
+          if (!nextCursor || nextCursor === requestCursor) {
+            projectListCursor = null;
+            projectListDone = true;
+          } else {
+            projectListCursor = nextCursor;
+          }
+        } catch (error) {
+          if (mode === "project" || error?.stopsBatch) throw error;
+          problems.push({ folder: null, error });
+          projectListDone = true;
+        }
+      }
+      async function ensureCurrentProject() {
+        while (!currentProject) {
+          if (projectIndex < projects.length) {
+            currentProject = projects[projectIndex++];
+            projectCursor = "0";
+            projectFetchedAny = false;
+            return true;
+          }
+          if (projectListDone) {
+            root.phase = "done";
+            return false;
+          }
+          await loadProjectListPage();
+        }
+        return true;
+      }
+      async function loadProjectConversationPage() {
+        if (!await ensureCurrentProject()) return;
+        const project = currentProject;
+        const requestCursor = projectCursor;
+        try {
+          const path = "/backend-api/gizmos/" + encodeURIComponent(project.id) + "/conversations?cursor=" + encodeURIComponent(requestCursor);
+          const data = await requestJson(path, "获取项目「" + project.title + "」的对话列表失败");
+          const extra = { projectId: project.id, projectTitle: project.title };
+          (data.items || []).forEach((item) => upsertConversationEntry(map, item, extra));
+          projectFetchedAny = true;
+          const nextCursor = data.cursor || null;
+          if (!nextCursor || nextCursor === requestCursor) {
+            currentProject = null;
+            projectCursor = "0";
+          } else {
+            projectCursor = nextCursor;
+          }
+        } catch (error) {
+          if (error?.stopsBatch) throw error;
+          if (!projectFetchedAny && project.conversations?.length) {
+            project.conversations.forEach((item) => upsertConversationEntry(
+              map,
+              item,
+              { projectId: project.id, projectTitle: project.title }
+            ));
+            problems.push({
+              folder: project.title,
+              error: new Error(error.message + "，已改用侧边栏中的 " + project.conversations.length + " 个预览对话")
+            });
+          } else {
+            problems.push({ folder: project.title, error });
+          }
+          currentProject = null;
+          projectCursor = "0";
+        }
+      }
+      return {
+        async loadMore() {
+          if (loading) throw new Error("正在加载对话列表，请稍候。");
+          if (!hasMore()) {
+            return {
+              entries: Array.from(map.values()).sort((a, b) => (b.update_time || 0) - (a.update_time || 0)),
+              problems: [...problems],
+              hasMore: false
+            };
+          }
+          loading = true;
+          const initialSize = map.size;
+          let safety = 0;
+          try {
+            while (map.size - initialSize < PAGE_LIMIT && hasMore()) {
+              session?.throwIfCancelled();
+              if (root.phase === "active" || root.phase === "archived") await loadRootPage();
+              else if (root.phase === "projects") await loadProjectConversationPage();
+              if (++safety > 1e4) throw new Error("分页加载超过安全上限，已停止以避免无限循环。");
+            }
+          } finally {
+            loading = false;
+          }
+          return {
+            entries: Array.from(map.values()).sort((a, b) => (b.update_time || 0) - (a.update_time || 0)),
+            problems: [...problems],
+            hasMore: hasMore()
+          };
+        }
+      };
+    }
     async function getConversation(id, accountId, session = null) {
       const response = await apiFetch(`/backend-api/conversation/${id}`, {
         accountId,
@@ -4441,6 +4613,9 @@ html.dark .gre-seg button[aria-checked="true"] { background: var(--gre-elev); }
       const state = {
         loading: true,
         loadError: null,
+        loadMoreError: null,
+        loadingMore: false,
+        hasMore: true,
         listWarning: null,
         list: [],
         filtered: [],
@@ -4463,7 +4638,7 @@ html.dark .gre-seg button[aria-checked="true"] { background: var(--gre-elev); }
       const hasHistory = Object.keys(history.items).length > 0;
       const STATUS_LABELS = { new: "未导出", updated: "有更新" };
       const listSession = createTaskSession((text) => {
-        if (state.loading) statusEl.textContent = text;
+        if (state.loading || state.loadingMore) statusEl.textContent = text;
       });
       const closeDialog = () => {
         listSession.cancelled = true;
@@ -4697,9 +4872,10 @@ html.dark .gre-seg button[aria-checked="true"] { background: var(--gre-elev); }
           statusEl.classList.add("gre-error");
           return;
         }
-        const total = state.filtered.length === state.list.length ? `${state.list.length} 个对话` : `${state.filtered.length} / ${state.list.length} 个对话`;
-        const selected = state.selected.size > 0 ? ` · 已选 ${state.selected.size}` : "";
-        statusEl.textContent = total + selected + (state.listWarning ? " · 部分项目未能读取" : "");
+        const total = state.filtered.length === state.list.length ? "已加载 " + state.list.length + " 个对话" : state.filtered.length + " / " + state.list.length + " 个已加载对话";
+        const selected = state.selected.size > 0 ? " · 已选 " + state.selected.size : "";
+        const remaining = state.hasMore ? " · 还有更多" : " · 已全部加载";
+        statusEl.textContent = total + selected + remaining + (state.listWarning ? " · 部分项目未能读取" : "");
         if (state.listWarning) statusEl.title = state.listWarning;
       };
       const toggleItem = (index, extendRange) => {
@@ -4752,52 +4928,106 @@ html.dark .gre-seg button[aria-checked="true"] { background: var(--gre-elev); }
         if (state.loading || state.loadError) {
           const note = document.createElement("div");
           note.className = "gre-empty";
-          note.textContent = state.loading ? "正在加载…" : "对话列表加载失败。";
+          note.textContent = state.loading ? "正在加载首批对话…" : "对话列表加载失败。";
           listEl.appendChild(note);
-        } else if (state.filtered.length === 0) {
-          const empty = document.createElement("div");
-          empty.className = "gre-empty";
-          empty.textContent = state.list.length === 0 ? "这里还没有对话" : "没有匹配的对话";
-          listEl.appendChild(empty);
         } else {
           state.filtered.slice(0, state.visibleCount).forEach((item, index) => listEl.appendChild(renderRow(item, index)));
-          if (state.filtered.length > state.visibleCount) {
+          if (state.filtered.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "gre-empty";
+            empty.textContent = state.list.length === 0 ? state.hasMore ? "暂时没有对话，继续加载以检查后续页面" : "这里还没有对话" : "没有匹配的对话";
+            listEl.appendChild(empty);
+          }
+          if (state.loadingMore) {
             const more = document.createElement("button");
             more.type = "button";
             more.className = "gre-btn gre-more";
-            more.textContent = `再显示 ${Math.min(state.pageSize, state.filtered.length - state.visibleCount)} 个`;
+            more.disabled = true;
+            more.textContent = "正在加载更多…";
+            listEl.appendChild(more);
+          } else if (state.filtered.length > state.visibleCount) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "gre-btn gre-more";
+            more.textContent = "再显示 " + Math.min(state.pageSize, state.filtered.length - state.visibleCount) + " 个已加载对话";
             more.onclick = () => {
               state.visibleCount = Math.min(state.visibleCount + state.pageSize, state.filtered.length);
               renderList();
             };
             listEl.appendChild(more);
+          } else if (state.loadMoreError) {
+            const retry = document.createElement("button");
+            retry.type = "button";
+            retry.className = "gre-btn gre-more";
+            retry.textContent = "加载失败，点击重试";
+            retry.title = state.loadMoreError;
+            retry.onclick = () => loadNextPage();
+            listEl.appendChild(retry);
+          } else if (state.hasMore) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "gre-btn gre-more";
+            more.textContent = "加载更多 " + state.pageSize + " 个";
+            more.onclick = () => loadNextPage();
+            listEl.appendChild(more);
+          } else if (state.list.length > 0) {
+            const end = document.createElement("div");
+            end.className = "gre-empty";
+            end.textContent = "已加载全部 " + state.list.length + " 个对话";
+            listEl.appendChild(end);
           }
         }
         listEl.scrollTop = scrollTop;
         refreshSelection();
       };
-      renderList();
-      (async () => {
-        if (!await ensureAccessToken()) throw new Error(ACCESS_TOKEN_HINT);
-        return collectConversationEntries({ mode, accountId: resolveWorkspaceId(workspaceId), session: listSession });
-      })().then(({ entries, problems }) => {
-        state.list = entries;
-        if (problems.length > 0) {
-          const names = problems.map(({ folder }) => folder ? `「${folder}」` : "项目列表").join("、");
-          state.listWarning = `${names}读取失败或不完整，列表可能缺少部分项目对话（详情见控制台）`;
-          problems.forEach(({ folder, error }) => console.warn(`[ChatGPT Exporter] 读取 ${folder || "项目列表"} 失败:`, error));
-        }
-      }).catch((err) => {
-        if (err?.cancelled) return;
-        console.error("[ChatGPT Exporter] 加载对话列表失败:", err);
-        state.loadError = err?.message || String(err);
-        state.list = [];
-      }).finally(() => {
-        if (listSession.cancelled) return;
-        state.loading = false;
-        applyFilters();
+      let listing = null;
+      const applyListWarnings = (problems) => {
+        if (problems.length === 0) return;
+        const names = [...new Set(problems.map(({ folder }) => folder ? "「" + folder + "」" : "项目列表"))];
+        state.listWarning = names.join("、") + "读取失败或不完整，列表可能缺少部分项目对话（详情见控制台）";
+        problems.forEach(({ folder, error }) => {
+          console.warn("[ChatGPT Exporter] 读取 " + (folder || "项目列表") + " 失败:", error);
+        });
+      };
+      const loadNextPage = async ({ initial = false } = {}) => {
+        if (listSession.cancelled || state.loadingMore || !initial && !state.hasMore) return;
+        const previousVisibleCount = state.visibleCount;
+        if (initial) state.loading = true;
+        else state.loadingMore = true;
+        state.loadMoreError = null;
         renderList();
-      });
+        try {
+          if (!await ensureAccessToken()) throw new Error(ACCESS_TOKEN_HINT);
+          if (!listing) {
+            listing = createConversationListing({
+              mode,
+              accountId: resolveWorkspaceId(workspaceId),
+              session: listSession
+            });
+          }
+          const result = await listing.loadMore();
+          if (listSession.cancelled) return;
+          state.list = result.entries;
+          state.hasMore = result.hasMore;
+          applyListWarnings(result.problems);
+          state.loading = false;
+          state.loadingMore = false;
+          applyFilters();
+          state.visibleCount = initial ? Math.min(state.pageSize, state.filtered.length) : Math.min(state.filtered.length, previousVisibleCount + state.pageSize);
+        } catch (err) {
+          if (err?.cancelled || listSession.cancelled) return;
+          console.error("[ChatGPT Exporter] 加载对话列表失败:", err);
+          if (initial) state.loadError = err?.message || String(err);
+          else state.loadMoreError = err?.message || String(err);
+        } finally {
+          if (listSession.cancelled) return;
+          state.loading = false;
+          state.loadingMore = false;
+          renderList();
+        }
+      };
+      renderList();
+      void loadNextPage({ initial: true });
       $("#conv-search").focus();
     }
     function showExportDialog(options = {}) {
